@@ -126,7 +126,6 @@ fn App() -> impl IntoView {
         <div class="app">
             <header class="topbar">
                 <h1>"🦍 Tilted Gorilla"</h1>
-                <span class="tagline">"No-Limit Hold'em — you vs. the bots"</span>
                 <button class="mute" on:click=move |_| {
                     let m = !muted.get();
                     muted.set(m);
@@ -249,9 +248,10 @@ fn seat_angle(i: usize, total: usize) -> f64 {
 fn seat_style(i: usize, total: usize) -> String {
     let angle = seat_angle(i, total);
     // Ellipse tuned to sit seats on the felt just inside the photographic table's
-    // rail (the green playable area is inset from the image edges).
-    let (rx, ry) = (34.0, 25.0);
-    let (cx, cy) = (50.0, 50.0);
+    // rail (the green playable area is inset from the image edges). Pushed a
+    // little wider/taller so the top-center seat's cards clear the pot.
+    let (rx, ry) = (37.0, 28.0);
+    let (cx, cy) = (50.0, 48.0);
     let left = cx + rx * angle.cos();
     let top = cy + ry * angle.sin();
     format!("left:{left:.1}%;top:{top:.1}%")
@@ -272,11 +272,6 @@ fn chip(amount: u32, class: &'static str) -> impl IntoView {
             <span class="chip-amt">{amount}</span>
         </div>
     }
-}
-
-/// The avatar disc for a seat.
-fn avatar(is_hero: bool) -> impl IntoView {
-    view! { <div class="avatar">{if is_hero { "🧑" } else { "🤖" }}</div> }
 }
 
 /// Opponent seat indices (1..count). A named helper so the `view!` macro never
@@ -343,7 +338,6 @@ fn opp_seat(game: RwSignal<Option<Game>>, i: usize, total: usize) -> impl IntoVi
                 }}
             </div>
             <div class="pod">
-                {avatar(false)}
                 <div class="pod-info">
                     <span class="name">{move || with_seat(&|g| g.names[i].clone())}</span>
                     <span class="stack">{move || with_seat(&|g| g.hand.seats[i].stack.to_string())}</span>
@@ -410,7 +404,6 @@ fn table_view(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>) -> impl I
                             </For>
                         </div>
                         <div class="pod">
-                            {avatar(true)}
                             <div class="pod-info">
                                 <span class="name">"You"</span>
                                 <span class="stack">
