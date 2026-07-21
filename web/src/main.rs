@@ -135,13 +135,19 @@ fn App() -> impl IntoView {
                     {move || if muted.get() { "🔇" } else { "🔊" }}
                 </button>
             </header>
-            {move || {
-                if game.with(Option::is_none) {
-                    setup_view(opponents, difficulty, stack, big_blind, deal).into_any()
-                } else {
-                    table_view(game, bet_amount).into_any()
+            {
+                // Only re-run this switch when a game appears/disappears — NOT
+                // on every action. A plain `game.with(...)` here would rebuild
+                // the whole table (and re-animate every card) on each move.
+                let has_game = Memo::new(move |_| game.with(Option::is_some));
+                move || {
+                    if has_game.get() {
+                        table_view(game, bet_amount).into_any()
+                    } else {
+                        setup_view(opponents, difficulty, stack, big_blind, deal).into_any()
+                    }
                 }
-            }}
+            }
         </div>
     }
 }
@@ -228,6 +234,13 @@ fn card_back() -> impl IntoView {
     view! { <div class="card back"></div> }
 }
 
+/// Opponent seat indices (1..count). A named helper so the `view!` macro never
+/// sees a `collect::<Vec<_>>()` turbofish — its angle brackets confuse the
+/// macro's tag parser.
+fn seat_indices(count: usize) -> Vec<usize> {
+    (1..count).collect()
+}
+
 fn board_cards(game: RwSignal<Option<Game>>) -> Vec<Card> {
     game.with(|o| o.as_ref().map(|g| g.hand.board.clone()).unwrap_or_default())
 }
@@ -241,55 +254,83 @@ fn hero_cards(game: RwSignal<Option<Game>>) -> Vec<Card> {
     })
 }
 
-/// The live poker table.
-fn table_view(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>) -> impl IntoView {
-    let opponents = move || {
-        game.with(|opt| {
-            let g = opt.as_ref().unwrap();
-            let showdown = g.phase == Phase::HandOver;
-            (1..g.hand.seats.len())
-                .map(|i| {
-                    let seat = &g.hand.seats[i];
-                    let name = g.names[i].clone();
-                    let is_button = i == g.button;
-                    let is_turn = g.hand.to_act == Some(i);
-                    let status = seat.status;
-                    let stack = seat.stack;
-                    let bet = seat.street_bet;
-                    let cards = match (seat.hole, status) {
-                        (Some(_), SeatStatus::Folded) => vec![],
-                        (Some(h), _) if showdown => {
-                            vec![card_face(h[0]).into_any(), card_face(h[1]).into_any()]
-                        }
-                        (Some(_), _) => vec![card_back().into_any(), card_back().into_any()],
-                        (None, _) => vec![],
-                    };
-                    view! {
-                        <div class="seat opp"
-                            class:folded=move || status == SeatStatus::Folded
-                            class:active-turn=is_turn
-                        >
-                            <div class="seat-head">
-                                <span class="name">{name}</span>
-                                {is_button.then(|| view!{ <span class="btn-chip">"D"</span> })}
-                            </div>
-                            <div class="hole">{cards}</div>
-                            <div class="seat-foot">
-                                <span class="stack">{stack} " chips"</span>
-                                {(bet > 0).then(|| view!{ <span class="bet">"bet " {bet}</span> })}
-                                {status_badge(status)}
-                            </div>
-                        </div>
-                    }
-                })
-                .collect::<Vec<_>>()
-        })
+/// What an opponent's hole cards should show. Kept as a `PartialEq` value so a
+/// per-seat `Memo` only rebuilds the card DOM when it actually changes (deal,
+/// fold, showdown) — not on every betting action.
+#[derive(Clone, PartialEq)]
+enum HoleView {
+    Backs,
+    Empty,
+    Faces(Card, Card),
+}
+
+/// Render one opponent seat. Each dynamic field is its own fine-grained
+/// reactive block, so an action only updates the bits that changed — the seat
+/// container and unchanged cards stay mounted.
+fn opp_seat(game: RwSignal<Option<Game>>, i: usize) -> impl IntoView {
+    let with_seat = move |f: &dyn Fn(&Game) -> String| -> String {
+        game.with(|o| o.as_ref().map(|g| f(g)).unwrap_or_default())
     };
+
+    // Memoized card state so the hole only re-renders on real changes.
+    let hole = Memo::new(move |_| {
+        game.with(|o| {
+            let Some(g) = o.as_ref() else { return HoleView::Empty };
+            let seat = &g.hand.seats[i];
+            match (seat.hole, seat.status) {
+                (_, SeatStatus::Folded) | (None, _) => HoleView::Empty,
+                (Some(h), _) if g.phase == Phase::HandOver => HoleView::Faces(h[0], h[1]),
+                (Some(_), _) => HoleView::Backs,
+            }
+        })
+    });
+
+    view! {
+        <div class="seat opp"
+            class:folded=move || game.with(|o| o.as_ref().map_or(false, |g| g.hand.seats[i].status == SeatStatus::Folded))
+            class:active-turn=move || game.with(|o| o.as_ref().map_or(false, |g| g.hand.to_act == Some(i)))
+        >
+            <div class="seat-head">
+                <span class="name">{move || with_seat(&|g| g.names[i].clone())}</span>
+                {move || game.with(|o| o.as_ref().map_or(false, |g| g.button == i))
+                    .then(|| view! { <span class="btn-chip">"D"</span> })}
+            </div>
+            <div class="hole">
+                {move || match hole.get() {
+                    HoleView::Backs => vec![card_back().into_any(), card_back().into_any()],
+                    HoleView::Faces(a, b) => vec![card_face(a).into_any(), card_face(b).into_any()],
+                    HoleView::Empty => vec![],
+                }}
+            </div>
+            <div class="seat-foot">
+                <span class="stack">{move || with_seat(&|g| g.hand.seats[i].stack.to_string())} " chips"</span>
+                {move || {
+                    let bet = game.with(|o| o.as_ref().map_or(0, |g| g.hand.seats[i].street_bet));
+                    (bet > 0).then(move || view! { <span class="bet">"bet " {bet}</span> })
+                }}
+                {move || status_badge(game.with(|o| o.as_ref().map_or(SeatStatus::SittingOut, |g| g.hand.seats[i].status)))}
+            </div>
+        </div>
+    }
+}
+
+/// The live poker table. Built once (gated by a `Memo` upstream); everything
+/// that changes during play is a fine-grained reactive block inside it.
+fn table_view(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>) -> impl IntoView {
+    // Seat count is fixed for the life of a game, so capture it once —
+    // *untracked*, so building the table does not subscribe the enclosing
+    // switch closure to the game signal (which would rebuild the whole table,
+    // re-mounting every card, on each action).
+    let seat_count = game.with_untracked(|o| o.as_ref().map(|g| g.hand.seats.len()).unwrap_or(0));
 
     view! {
         <div class="table-wrap">
             <div class="felt">
-                <div class="opponents">{opponents}</div>
+                <div class="opponents">
+                    <For each=move || seat_indices(seat_count) key=|i| *i let:i>
+                        {opp_seat(game, i)}
+                    </For>
+                </div>
 
                 <div class="center">
                     <div class="pot">
