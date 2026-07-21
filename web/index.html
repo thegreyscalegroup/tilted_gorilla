@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Tilted Gorilla — Browser Poker</title>
     <link data-trunk rel="rust" data-wasm-opt="z" />
+    <link data-trunk rel="copy-dir" href="assets" />
     <style>
         :root {
             --felt-1: #1a7f52;
@@ -88,31 +89,19 @@
 
         /* ---- Table ---- */
         .table-wrap { margin-top: 18px; display: flex; flex-direction: column; gap: 16px; }
+        /* The table is a real photographic asset; all the felt/rail/lighting
+           lives in the image, so the element just displays it. */
         .felt {
-            position: relative; aspect-ratio: 16 / 10; width: 100%;
-            border-radius: 48% / 46%;
-            background:
-                linear-gradient(180deg, rgba(255,255,255,.05), rgba(0,0,0,.25)),
-                radial-gradient(120% 120% at 50% 38%, var(--felt-1) 0%, var(--felt-2) 55%, var(--felt-3) 100%);
-            border: 18px solid;
-            border-image: linear-gradient(160deg, var(--rail-1), var(--rail-2)) 1;
-            box-shadow:
-                var(--shadow),
-                inset 0 0 70px rgba(0,0,0,.5),
-                inset 0 0 0 2px rgba(237,200,113,.18);
-        }
-        /* soft felt vignette + a subtle center ring */
-        .felt::after {
-            content: ""; position: absolute; inset: 8%;
-            border-radius: 50%; border: 1.5px solid rgba(237,200,113,.12);
-            pointer-events: none;
+            position: relative; width: 100%; aspect-ratio: 3 / 2;
+            background: url("assets/table.png") center / contain no-repeat;
+            filter: drop-shadow(0 22px 46px rgba(0,0,0,.5));
         }
         .felt-inner { position: absolute; inset: 0; }
 
         /* ---- Center: pot + board ---- */
         .center {
-            position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%);
-            display: flex; flex-direction: column; align-items: center; gap: 12px; width: 80%;
+            position: absolute; left: 50%; top: 47%; transform: translate(-50%, -50%);
+            display: flex; flex-direction: column; align-items: center; gap: 10px; width: 70%;
         }
         .pot-area { display: flex; align-items: center; gap: 10px; min-height: 30px; }
         .pot-label { color: var(--gold); font-weight: 700; font-size: 1rem; letter-spacing: .3px;

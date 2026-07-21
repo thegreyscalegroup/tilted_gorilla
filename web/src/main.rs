@@ -248,9 +248,10 @@ fn seat_angle(i: usize, total: usize) -> f64 {
 
 fn seat_style(i: usize, total: usize) -> String {
     let angle = seat_angle(i, total);
-    // A slightly flattened ellipse that keeps every seat clear of the rail.
-    let (rx, ry) = (45.0, 34.0);
-    let (cx, cy) = (50.0, 47.0);
+    // Ellipse tuned to sit seats on the felt just inside the photographic table's
+    // rail (the green playable area is inset from the image edges).
+    let (rx, ry) = (34.0, 25.0);
+    let (cx, cy) = (50.0, 50.0);
     let left = cx + rx * angle.cos();
     let top = cy + ry * angle.sin();
     format!("left:{left:.1}%;top:{top:.1}%")
@@ -400,7 +401,7 @@ fn table_view(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>) -> impl I
                         </div>
                     </div>
 
-                    <div class="seat hero" style=seat_style(0, total)
+                    <div class="seat hero" style="left:50%;top:66%"
                         class:active-turn=move || game.with(|o| o.as_ref().map_or(false, |g| g.phase == Phase::HumanTurn))
                     >
                         <div class="hole">
