@@ -1,9 +1,10 @@
 //! UI-facing game controller.
 //!
 //! Wraps the rules [`Hand`] and the [`tg_ai`] bots into a single object the
-//! Leptos view drives: start a hand, submit the human's action, let the bots
-//! play until it's the human's turn again, and settle at showdown. It also
-//! computes the human's live equity — the odds readout PokerTH never showed.
+//! Leptos view drives. Bots act **one step at a time** ([`Game::step_bot`]) so
+//! the UI can pace them with a timer and play a sound per action, instead of the
+//! whole table resolving in a single instant. It also computes the human's live
+//! equity — the odds readout PokerTH never showed.
 
 use tg_ai::{decide, equity, Tier};
 use tg_engine::hand::{Action, Hand, Payouts};
@@ -16,6 +17,8 @@ pub const HUMAN: usize = 0;
 pub enum Phase {
     /// Waiting for the human to act.
     HumanTurn,
+    /// One or more bots still have to act; the UI steps them on a timer.
+    BotsActing,
     /// Hand finished; showing results until the player starts the next one.
     HandOver,
 }
@@ -66,14 +69,14 @@ impl Game {
             tiers,
             names,
             rng,
-            phase: Phase::HumanTurn,
+            phase: Phase::BotsActing,
             log: Vec::new(),
             last_payouts: None,
             hero_equity: None,
             hand_number: 1,
         };
         game.log.push("New hand dealt.".to_string());
-        game.run_bots_until_human();
+        game.after_state_change();
         game
     }
 
@@ -89,7 +92,6 @@ impl Game {
             self.log.push("Not enough players with chips. Game over.".to_string());
             return;
         }
-        // Advance the button to the next solvent seat.
         let n = self.stacks.len();
         let mut b = (self.button + 1) % n;
         while self.stacks[b] == 0 {
@@ -97,15 +99,14 @@ impl Game {
         }
         self.button = b;
         self.hand = Hand::start(&self.stacks, self.button, self.sb, self.bb, &mut self.rng);
-        self.phase = Phase::HumanTurn;
         self.last_payouts = None;
         self.hero_equity = None;
         self.hand_number += 1;
         self.log.push(format!("--- Hand #{} ---", self.hand_number));
-        self.run_bots_until_human();
+        self.after_state_change();
     }
 
-    /// Apply the human's chosen action, then let the bots respond.
+    /// Apply the human's chosen action, then settle the resulting phase.
     pub fn human_action(&mut self, action: Action) {
         if self.phase != Phase::HumanTurn || self.hand.to_act != Some(HUMAN) {
             return;
@@ -115,37 +116,46 @@ impl Game {
             return;
         }
         self.hero_equity = None;
-        self.run_bots_until_human();
+        self.after_state_change();
     }
 
-    /// Drive bot decisions until it is the human's turn or the hand ends.
-    fn run_bots_until_human(&mut self) {
-        loop {
-            if self.hand.is_over() {
-                self.finish_hand();
-                return;
-            }
-            match self.hand.to_act {
-                Some(HUMAN) => {
-                    self.phase = Phase::HumanTurn;
-                    self.compute_hero_equity();
-                    return;
-                }
-                Some(seat) => {
-                    let tier = self.tiers[seat];
-                    let action = decide(&self.hand, seat, tier, &mut self.rng);
-                    self.log.push(format!("{} {}", self.names[seat], describe(&action, &self.hand)));
-                    // A bot should always produce a legal action; if not, fold.
-                    if self.hand.apply(action).is_err() {
-                        let _ = self.hand.apply(Action::Fold);
-                    }
-                }
-                None => {
-                    // No one to act (e.g. all-in run-out) — settle.
-                    self.finish_hand();
-                    return;
-                }
-            }
+    /// True while it's a bot's turn and the hand is live — the UI's cue to
+    /// schedule another [`Game::step_bot`].
+    pub fn is_bot_turn(&self) -> bool {
+        self.phase == Phase::BotsActing
+    }
+
+    /// Perform exactly one bot's action. Returns the action taken (for the UI to
+    /// sound), or `None` if it wasn't a bot's turn.
+    pub fn step_bot(&mut self) -> Option<Action> {
+        if self.hand.is_over() {
+            self.after_state_change();
+            return None;
+        }
+        let seat = self.hand.to_act?;
+        if seat == HUMAN {
+            return None;
+        }
+        let tier = self.tiers[seat];
+        let action = decide(&self.hand, seat, tier, &mut self.rng);
+        self.log.push(format!("{} {}", self.names[seat], describe(&action, &self.hand)));
+        if self.hand.apply(action).is_err() {
+            let _ = self.hand.apply(Action::Fold);
+        }
+        self.after_state_change();
+        Some(action)
+    }
+
+    /// Recompute the phase after any state change: end the hand, hand the turn
+    /// to the human (computing equity), or leave bots to act.
+    fn after_state_change(&mut self) {
+        if self.hand.is_over() || self.hand.to_act.is_none() {
+            self.finish_hand();
+        } else if self.hand.to_act == Some(HUMAN) {
+            self.phase = Phase::HumanTurn;
+            self.compute_hero_equity();
+        } else {
+            self.phase = Phase::BotsActing;
         }
     }
 
@@ -154,7 +164,6 @@ impl Game {
             return;
         }
         let payouts = self.hand.settle();
-        // Sync persistent stacks from the settled hand.
         for (i, seat) in self.hand.seats.iter().enumerate() {
             self.stacks[i] = seat.stack;
         }
@@ -176,8 +185,6 @@ impl Game {
                 .enumerate()
                 .filter(|(i, s)| *i != HUMAN && s.in_hand())
                 .count();
-            // Fewer iterations than the bots use — this runs every human turn
-            // and only needs to be readable to two digits.
             let eq = equity(hole, &self.hand.board, opponents.max(1), 800, &mut self.rng);
             self.hero_equity = Some(eq);
         }
@@ -194,10 +201,7 @@ fn describe(action: &Action, hand: &Hand) -> String {
         Action::Fold => "folds".to_string(),
         Action::Check => "checks".to_string(),
         Action::Call => {
-            let cost = hand
-                .legal_actions()
-                .map(|l| l.call_cost)
-                .unwrap_or(0);
+            let cost = hand.legal_actions().map(|l| l.call_cost).unwrap_or(0);
             format!("calls {cost}")
         }
         Action::Raise { to } => format!("raises to {to}"),

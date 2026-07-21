@@ -1,8 +1,11 @@
 //! Tilted Gorilla — browser poker table.
 //!
 //! A Leptos (CSR/WASM) front end over the `tg-engine` rules and `tg-ai` bots.
-//! Seat 0 is the human; everyone else is a tunable AI. The whole game state
-//! lives in one signal; every action mutates it and the view re-renders.
+//! Seat 0 is the human; everyone else is a tunable AI. Bots act on a timer via
+//! [`advance`] so the table plays out at a human pace, with a soft sound per
+//! action and cards that animate onto the felt.
+
+use std::time::Duration;
 
 use leptos::prelude::*;
 
@@ -10,6 +13,7 @@ use tg_ai::Tier;
 use tg_engine::card::{Card, Suit};
 use tg_engine::hand::{Action, SeatStatus, Street};
 
+mod audio;
 mod game;
 use game::{Game, Phase, HUMAN};
 
@@ -18,16 +22,69 @@ fn main() {
     leptos::mount::mount_to_body(App);
 }
 
-/// A fresh RNG seed from the wall clock — good enough to make each session's
-/// deals unpredictable.
+/// A fresh RNG seed from the wall clock.
 fn seed() -> u64 {
     js_sys::Date::now() as u64 ^ 0x9E37_79B9_7F4A_7C15
+}
+
+/// Stable per-card key (0..52) so keyed rendering only animates *new* cards.
+fn card_key(c: Card) -> u8 {
+    let suit = match c.suit {
+        Suit::Clubs => 0,
+        Suit::Diamonds => 1,
+        Suit::Hearts => 2,
+        Suit::Spades => 3,
+    };
+    suit * 13 + (c.rank - 2)
+}
+
+/// Play the soft sound that matches an action.
+fn play_action_sound(a: &Action) {
+    match a {
+        Action::Fold => audio::fold_swish(),
+        Action::Check => audio::check_tap(),
+        Action::Call | Action::Raise { .. } => audio::chip(),
+    }
+}
+
+/// A little flurry of card whisks when a hand is dealt.
+fn play_deal_sounds() {
+    audio::deal_card();
+    set_timeout(audio::deal_card, Duration::from_millis(95));
+    set_timeout(audio::deal_card, Duration::from_millis(190));
+}
+
+/// Drive the table forward: if a bot is due, step it after a short delay (so the
+/// action is watchable), play its sound, then recurse. When the hand ends, rake
+/// the pot sound once.
+fn advance(game: RwSignal<Option<Game>>) {
+    let over = game.with(|o| o.as_ref().map_or(false, |g| g.phase == Phase::HandOver));
+    if over {
+        audio::pot_win();
+        return;
+    }
+    let bot_turn = game.with(|o| o.as_ref().map_or(false, |g| g.is_bot_turn()));
+    if bot_turn {
+        set_timeout(
+            move || {
+                let acted = game
+                    .try_update(|o| o.as_mut().and_then(Game::step_bot))
+                    .flatten();
+                if let Some(a) = acted {
+                    play_action_sound(&a);
+                }
+                advance(game);
+            },
+            Duration::from_millis(650),
+        );
+    }
 }
 
 #[component]
 fn App() -> impl IntoView {
     let game = RwSignal::new(None::<Game>);
     let bet_amount = RwSignal::new(0u32);
+    let muted = RwSignal::new(false);
 
     // Setup form state.
     let opponents = RwSignal::new(3usize);
@@ -35,8 +92,8 @@ fn App() -> impl IntoView {
     let stack = RwSignal::new(1000u32);
     let big_blind = RwSignal::new(10u32);
 
-    // When it becomes the human's turn, default the raise slider to the minimum
-    // legal raise so the control starts somewhere sensible.
+    // Default the raise slider to the minimum legal raise whenever it becomes
+    // the human's turn.
     Effect::new(move |_| {
         game.with(|opt| {
             if let Some(g) = opt {
@@ -61,6 +118,8 @@ fn App() -> impl IntoView {
             seed(),
         );
         game.set(Some(g));
+        play_deal_sounds();
+        advance(game);
     };
 
     view! {
@@ -68,6 +127,13 @@ fn App() -> impl IntoView {
             <header class="topbar">
                 <h1>"🦍 Tilted Gorilla"</h1>
                 <span class="tagline">"No-Limit Hold'em — you vs. the bots"</span>
+                <button class="mute" on:click=move |_| {
+                    let m = !muted.get();
+                    muted.set(m);
+                    audio::set_muted(m);
+                }>
+                    {move || if muted.get() { "🔇" } else { "🔊" }}
+                </button>
             </header>
             {move || {
                 if game.with(Option::is_none) {
@@ -162,21 +228,21 @@ fn card_back() -> impl IntoView {
     view! { <div class="card back"></div> }
 }
 
+fn board_cards(game: RwSignal<Option<Game>>) -> Vec<Card> {
+    game.with(|o| o.as_ref().map(|g| g.hand.board.clone()).unwrap_or_default())
+}
+
+fn hero_cards(game: RwSignal<Option<Game>>) -> Vec<Card> {
+    game.with(|o| {
+        o.as_ref()
+            .and_then(|g| g.hand.seats[HUMAN].hole)
+            .map(|h| h.to_vec())
+            .unwrap_or_default()
+    })
+}
+
 /// The live poker table.
 fn table_view(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>) -> impl IntoView {
-    // Everything reactive to the game signal lives inside this closure.
-    let board = move || {
-        game.with(|opt| {
-            let g = opt.as_ref().unwrap();
-            let mut cards: Vec<_> = g.hand.board.iter().map(|c| card_face(*c).into_any()).collect();
-            // Pad to five slots for a stable layout.
-            while cards.len() < 5 {
-                cards.push(view! { <div class="card slot"></div> }.into_any());
-            }
-            cards
-        })
-    };
-
     let opponents = move || {
         game.with(|opt| {
             let g = opt.as_ref().unwrap();
@@ -191,11 +257,8 @@ fn table_view(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>) -> impl I
                     let stack = seat.stack;
                     let bet = seat.street_bet;
                     let cards = match (seat.hole, status) {
-                        (Some(h), SeatStatus::Folded) => {
-                            let _ = h;
-                            vec![].into_iter().map(|c: Card| card_face(c).into_any()).collect::<Vec<_>>()
-                        }
-                        (Some(h), _) if showdown && status != SeatStatus::Folded => {
+                        (Some(_), SeatStatus::Folded) => vec![],
+                        (Some(h), _) if showdown => {
                             vec![card_face(h[0]).into_any(), card_face(h[1]).into_any()]
                         }
                         (Some(_), _) => vec![card_back().into_any(), card_back().into_any()],
@@ -223,17 +286,6 @@ fn table_view(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>) -> impl I
         })
     };
 
-    let hero = move || {
-        game.with(|opt| {
-            let g = opt.as_ref().unwrap();
-            let seat = &g.hand.seats[HUMAN];
-            match seat.hole {
-                Some(h) => vec![card_face(h[0]).into_any(), card_face(h[1]).into_any()],
-                None => vec![],
-            }
-        })
-    };
-
     view! {
         <div class="table-wrap">
             <div class="felt">
@@ -243,13 +295,25 @@ fn table_view(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>) -> impl I
                     <div class="pot">
                         "Pot: " {move || game.with(|o| o.as_ref().unwrap().hand.pot_total())}
                     </div>
-                    <div class="board">{board}</div>
+                    <div class="board">
+                        <For each=move || board_cards(game) key=|c| card_key(*c) let:card>
+                            {card_face(card)}
+                        </For>
+                        {move || {
+                            let filled = board_cards(game).len();
+                            (filled..5)
+                                .map(|_| view! { <div class="card slot"></div> })
+                                .collect_view()
+                        }}
+                    </div>
                     <div class="street">
                         {move || game.with(|o| street_name(o.as_ref().unwrap().hand.street))}
                     </div>
                 </div>
 
-                <div class="seat hero">
+                <div class="seat hero" class:active-turn=move || {
+                    game.with(|o| o.as_ref().map_or(false, |g| g.phase == Phase::HumanTurn))
+                }>
                     <div class="seat-head">
                         <span class="name">"You"</span>
                         {move || game.with(|o| {
@@ -257,7 +321,11 @@ fn table_view(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>) -> impl I
                             (HUMAN == g.button).then(|| view!{ <span class="btn-chip">"D"</span> })
                         })}
                     </div>
-                    <div class="hole">{hero}</div>
+                    <div class="hole">
+                        <For each=move || hero_cards(game) key=|c| card_key(*c) let:card>
+                            {card_face(card)}
+                        </For>
+                    </div>
                     <div class="seat-foot">
                         <span class="stack">
                             {move || game.with(|o| o.as_ref().unwrap().hand.seats[HUMAN].stack)} " chips"
@@ -308,6 +376,8 @@ fn controls(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>) -> impl Int
                         view!{
                             <button class="act next" on:click=move |_| {
                                 game.update(|o| { if let Some(g) = o { g.next_hand(); } });
+                                play_deal_sounds();
+                                advance(game);
                             }>"Next hand"</button>
                         }.into_any()
                     }}
@@ -315,7 +385,11 @@ fn controls(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>) -> impl Int
             }.into_any();
         }
 
-        // Human's turn: show legal actions.
+        if g.phase == Phase::BotsActing {
+            return view! { <div class="controls thinking">"Bots are acting…"</div> }.into_any();
+        }
+
+        // Human's turn.
         let Some(legal) = g.hand.legal_actions() else {
             return ().into_any();
         };
@@ -329,23 +403,24 @@ fn controls(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>) -> impl Int
         let min_to = legal.min_raise_to;
         let max_to = legal.max_raise_to;
 
+        // A human action: play its sound, apply it, then let the bots respond.
+        let act = move |action: Action| {
+            play_action_sound(&action);
+            game.update(|o| { if let Some(g) = o { g.human_action(action); } });
+            advance(game);
+        };
+
         view! {
             <div class="controls">
-                <button class="act fold" on:click=move |_| {
-                    game.update(|o| { if let Some(g) = o { g.human_action(Action::Fold); } });
-                }>"Fold"</button>
+                <button class="act fold" on:click=move |_| act(Action::Fold)>"Fold"</button>
 
                 {if can_check {
                     view!{
-                        <button class="act check" on:click=move |_| {
-                            game.update(|o| { if let Some(g) = o { g.human_action(Action::Check); } });
-                        }>"Check"</button>
+                        <button class="act check" on:click=move |_| act(Action::Check)>"Check"</button>
                     }.into_any()
                 } else {
                     view!{
-                        <button class="act call" on:click=move |_| {
-                            game.update(|o| { if let Some(g) = o { g.human_action(Action::Call); } });
-                        }>"Call " {call_cost}</button>
+                        <button class="act call" on:click=move |_| act(Action::Call)>"Call " {call_cost}</button>
                     }.into_any()
                 }}
 
@@ -363,7 +438,7 @@ fn controls(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>) -> impl Int
                             />
                             <button class="act raise" on:click=move |_| {
                                 let to = bet_amount.get().clamp(min_to, max_to);
-                                game.update(|o| { if let Some(g) = o { g.human_action(Action::Raise { to }); } });
+                                act(Action::Raise { to });
                             }>
                                 {move || {
                                     let to = bet_amount.get().clamp(min_to, max_to);

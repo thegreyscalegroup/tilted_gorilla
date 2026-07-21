@@ -11,6 +11,24 @@ tg-ai = { path = "../ai" }
 leptos = { version = "0.7", features = ["csr"] }
 console_error_panic_hook = "0.1"
 js-sys = "0.3"
+wasm-bindgen = "0.2"
+
+[dependencies.web-sys]
+version = "0.3"
+features = [
+    "AudioContext",
+    "AudioContextState",
+    "AudioDestinationNode",
+    "AudioNode",
+    "AudioParam",
+    "AudioBuffer",
+    "AudioBufferSourceNode",
+    "GainNode",
+    "OscillatorNode",
+    "OscillatorType",
+    "BiquadFilterNode",
+    "BiquadFilterType",
+]
 
 [profile.release]
 opt-level = "z"

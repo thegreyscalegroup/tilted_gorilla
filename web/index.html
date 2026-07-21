@@ -134,6 +134,33 @@
             display: flex; flex-direction: column; gap: 2px;
         }
         .log-line:first-child { color: var(--text); }
+
+        /* ---- Mute toggle ---- */
+        .mute {
+            margin-left: auto; background: var(--panel-2); border: none;
+            color: var(--text); font-size: 1.1rem; cursor: pointer;
+            border-radius: 8px; padding: 6px 10px; line-height: 1;
+        }
+        .mute:hover { background: #33465a; }
+
+        /* ---- Bots-thinking hint ---- */
+        .controls.thinking { color: var(--muted); font-style: italic; min-height: 44px; align-items: center; }
+
+        /* ---- Card deal-in animation ----
+           Scoped to the board and the hero's hole cards. Because those are
+           rendered with keyed <For>, only newly dealt cards mount and animate;
+           existing cards stay put across re-renders. */
+        @keyframes dealIn {
+            from { opacity: 0; transform: translateY(-22px) rotate(-6deg) scale(.9); }
+            to   { opacity: 1; transform: none; }
+        }
+        .board .card:not(.slot),
+        .seat.hero .hole .card { animation: dealIn .3s ease both; }
+
+        @media (prefers-reduced-motion: reduce) {
+            .board .card:not(.slot), .seat.hero .hole .card { animation: none; }
+            .eq-fill { transition: none; }
+        }
     </style>
 </head>
 <body></body>

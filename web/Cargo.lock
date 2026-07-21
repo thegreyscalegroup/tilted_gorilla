@@ -1429,6 +1429,8 @@ dependencies = [
  "leptos",
  "tg-ai",
  "tg-engine",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]
