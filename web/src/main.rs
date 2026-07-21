@@ -218,20 +218,64 @@ fn setup_view(
     }
 }
 
-/// Render one card face-up.
+/// Render one card face-up — casino style, with rank+suit indices in opposite
+/// corners and a large center pip.
 fn card_face(card: Card) -> impl IntoView {
     let red = matches!(card.suit, Suit::Hearts | Suit::Diamonds);
+    let r = card.rank_label();
+    let s = card.suit.symbol().to_string();
     view! {
         <div class="card" class:red=red>
-            <span class="rank">{card.rank_label()}</span>
-            <span class="suit">{card.suit.symbol().to_string()}</span>
+            <div class="corner tl"><span class="cr">{r}</span><span class="cs">{s.clone()}</span></div>
+            <div class="pip">{s.clone()}</div>
+            <div class="corner br"><span class="cr">{r}</span><span class="cs">{s}</span></div>
         </div>
     }
 }
 
-/// A face-down card back.
+/// A face-down card back with a patterned reverse.
 fn card_back() -> impl IntoView {
-    view! { <div class="card back"></div> }
+    view! { <div class="card back"><div class="back-emblem">"🦍"</div></div> }
+}
+
+/// Absolute position (as a `left`/`top` style string) for a seat placed around
+/// the oval. Seat 0 (the human) sits at the bottom; the rest spread evenly
+/// around the ellipse.
+fn seat_angle(i: usize, total: usize) -> f64 {
+    // Seat 0 at the bottom (90°), others spaced evenly clockwise.
+    std::f64::consts::PI * (0.5 + 2.0 * i as f64 / total.max(2) as f64)
+}
+
+fn seat_style(i: usize, total: usize) -> String {
+    let angle = seat_angle(i, total);
+    // A slightly flattened ellipse that keeps every seat clear of the rail.
+    let (rx, ry) = (45.0, 34.0);
+    let (cx, cy) = (50.0, 47.0);
+    let left = cx + rx * angle.cos();
+    let top = cy + ry * angle.sin();
+    format!("left:{left:.1}%;top:{top:.1}%")
+}
+
+/// Whether a seat sits in the upper half of the table (so its cards should hang
+/// toward the center rather than rise into the rail).
+fn seat_is_upper(i: usize, total: usize) -> bool {
+    seat_angle(i, total).sin() < -0.3
+}
+
+/// A small chip graphic showing a bet/pot amount.
+fn chip(amount: u32, class: &'static str) -> impl IntoView {
+    let class = format!("chip {class}");
+    view! {
+        <div class=class>
+            <span class="chip-ring"></span>
+            <span class="chip-amt">{amount}</span>
+        </div>
+    }
+}
+
+/// The avatar disc for a seat.
+fn avatar(is_hero: bool) -> impl IntoView {
+    view! { <div class="avatar">{if is_hero { "🧑" } else { "🤖" }}</div> }
 }
 
 /// Opponent seat indices (1..count). A named helper so the `view!` macro never
@@ -264,10 +308,10 @@ enum HoleView {
     Faces(Card, Card),
 }
 
-/// Render one opponent seat. Each dynamic field is its own fine-grained
-/// reactive block, so an action only updates the bits that changed — the seat
-/// container and unchanged cards stay mounted.
-fn opp_seat(game: RwSignal<Option<Game>>, i: usize) -> impl IntoView {
+/// Render one opponent seat, positioned around the oval. Each dynamic field is
+/// its own fine-grained reactive block, so an action only updates the bits that
+/// changed — the seat container and unchanged cards stay mounted.
+fn opp_seat(game: RwSignal<Option<Game>>, i: usize, total: usize) -> impl IntoView {
     let with_seat = move |f: &dyn Fn(&Game) -> String| -> String {
         game.with(|o| o.as_ref().map(|g| f(g)).unwrap_or_default())
     };
@@ -286,15 +330,10 @@ fn opp_seat(game: RwSignal<Option<Game>>, i: usize) -> impl IntoView {
     });
 
     view! {
-        <div class="seat opp"
+        <div class="seat opp" style=seat_style(i, total) class:upper=seat_is_upper(i, total)
             class:folded=move || game.with(|o| o.as_ref().map_or(false, |g| g.hand.seats[i].status == SeatStatus::Folded))
             class:active-turn=move || game.with(|o| o.as_ref().map_or(false, |g| g.hand.to_act == Some(i)))
         >
-            <div class="seat-head">
-                <span class="name">{move || with_seat(&|g| g.names[i].clone())}</span>
-                {move || game.with(|o| o.as_ref().map_or(false, |g| g.button == i))
-                    .then(|| view! { <span class="btn-chip">"D"</span> })}
-            </div>
             <div class="hole">
                 {move || match hole.get() {
                     HoleView::Backs => vec![card_back().into_any(), card_back().into_any()],
@@ -302,14 +341,20 @@ fn opp_seat(game: RwSignal<Option<Game>>, i: usize) -> impl IntoView {
                     HoleView::Empty => vec![],
                 }}
             </div>
-            <div class="seat-foot">
-                <span class="stack">{move || with_seat(&|g| g.hand.seats[i].stack.to_string())} " chips"</span>
-                {move || {
-                    let bet = game.with(|o| o.as_ref().map_or(0, |g| g.hand.seats[i].street_bet));
-                    (bet > 0).then(move || view! { <span class="bet">"bet " {bet}</span> })
-                }}
+            <div class="pod">
+                {avatar(false)}
+                <div class="pod-info">
+                    <span class="name">{move || with_seat(&|g| g.names[i].clone())}</span>
+                    <span class="stack">{move || with_seat(&|g| g.hand.seats[i].stack.to_string())}</span>
+                </div>
+                {move || game.with(|o| o.as_ref().map_or(false, |g| g.button == i))
+                    .then(|| view! { <span class="btn-chip">"D"</span> })}
                 {move || status_badge(game.with(|o| o.as_ref().map_or(SeatStatus::SittingOut, |g| g.hand.seats[i].status)))}
             </div>
+            {move || {
+                let bet = game.with(|o| o.as_ref().map_or(0, |g| g.hand.seats[i].street_bet));
+                (bet > 0).then(move || chip(bet, "bet").into_any()).unwrap_or_else(|| ().into_any())
+            }}
         </div>
     }
 }
@@ -323,55 +368,66 @@ fn table_view(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>) -> impl I
     // re-mounting every card, on each action).
     let seat_count = game.with_untracked(|o| o.as_ref().map(|g| g.hand.seats.len()).unwrap_or(0));
 
+    let total = seat_count.max(2);
+
     view! {
         <div class="table-wrap">
             <div class="felt">
-                <div class="opponents">
-                    <For each=move || seat_indices(seat_count) key=|i| *i let:i>
-                        {opp_seat(game, i)}
-                    </For>
-                </div>
-
-                <div class="center">
-                    <div class="pot">
-                        "Pot: " {move || game.with(|o| o.as_ref().unwrap().hand.pot_total())}
+                <div class="felt-inner">
+                    <div class="center">
+                        <div class="pot-area">
+                            {move || {
+                                let p = game.with(|o| o.as_ref().map_or(0, |g| g.hand.pot_total()));
+                                if p > 0 { chip(p, "pot").into_any() } else { ().into_any() }
+                            }}
+                            <div class="pot-label">
+                                "Pot " {move || game.with(|o| o.as_ref().map_or(0, |g| g.hand.pot_total()))}
+                            </div>
+                        </div>
+                        <div class="board">
+                            <For each=move || board_cards(game) key=|c| card_key(*c) let:card>
+                                {card_face(card)}
+                            </For>
+                            {move || {
+                                let filled = board_cards(game).len();
+                                (filled..5)
+                                    .map(|_| view! { <div class="card slot"></div> })
+                                    .collect_view()
+                            }}
+                        </div>
+                        <div class="street">
+                            {move || game.with(|o| street_name(o.as_ref().unwrap().hand.street))}
+                        </div>
                     </div>
-                    <div class="board">
-                        <For each=move || board_cards(game) key=|c| card_key(*c) let:card>
-                            {card_face(card)}
-                        </For>
+
+                    <div class="seat hero" style=seat_style(0, total)
+                        class:active-turn=move || game.with(|o| o.as_ref().map_or(false, |g| g.phase == Phase::HumanTurn))
+                    >
+                        <div class="hole">
+                            <For each=move || hero_cards(game) key=|c| card_key(*c) let:card>
+                                {card_face(card)}
+                            </For>
+                        </div>
+                        <div class="pod">
+                            {avatar(true)}
+                            <div class="pod-info">
+                                <span class="name">"You"</span>
+                                <span class="stack">
+                                    {move || game.with(|o| o.as_ref().unwrap().hand.seats[HUMAN].stack)}
+                                </span>
+                            </div>
+                            {move || game.with(|o| o.as_ref().map_or(false, |g| g.button == HUMAN))
+                                .then(|| view! { <span class="btn-chip">"D"</span> })}
+                        </div>
                         {move || {
-                            let filled = board_cards(game).len();
-                            (filled..5)
-                                .map(|_| view! { <div class="card slot"></div> })
-                                .collect_view()
+                            let bet = game.with(|o| o.as_ref().map_or(0, |g| g.hand.seats[HUMAN].street_bet));
+                            if bet > 0 { chip(bet, "bet").into_any() } else { ().into_any() }
                         }}
                     </div>
-                    <div class="street">
-                        {move || game.with(|o| street_name(o.as_ref().unwrap().hand.street))}
-                    </div>
-                </div>
 
-                <div class="seat hero" class:active-turn=move || {
-                    game.with(|o| o.as_ref().map_or(false, |g| g.phase == Phase::HumanTurn))
-                }>
-                    <div class="seat-head">
-                        <span class="name">"You"</span>
-                        {move || game.with(|o| {
-                            let g = o.as_ref().unwrap();
-                            (HUMAN == g.button).then(|| view!{ <span class="btn-chip">"D"</span> })
-                        })}
-                    </div>
-                    <div class="hole">
-                        <For each=move || hero_cards(game) key=|c| card_key(*c) let:card>
-                            {card_face(card)}
-                        </For>
-                    </div>
-                    <div class="seat-foot">
-                        <span class="stack">
-                            {move || game.with(|o| o.as_ref().unwrap().hand.seats[HUMAN].stack)} " chips"
-                        </span>
-                    </div>
+                    <For each=move || seat_indices(seat_count) key=|i| *i let:i>
+                        {opp_seat(game, i, total)}
+                    </For>
                 </div>
             </div>
 
