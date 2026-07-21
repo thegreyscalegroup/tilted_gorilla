@@ -1,0 +1,13 @@
+[package]
+name = "tg-ai"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Tunable poker AI for Tilted Gorilla: Monte-Carlo equity + pot-odds policy."
+
+[lib]
+name = "tg_ai"
+
+[dependencies]
+tg-engine = { path = "../engine" }

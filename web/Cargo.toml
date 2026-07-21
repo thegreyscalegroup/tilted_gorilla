@@ -1,0 +1,19 @@
+[package]
+name = "tg-web"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+description = "Tilted Gorilla — browser poker table (Leptos + WASM)."
+
+[dependencies]
+tg-engine = { path = "../engine" }
+tg-ai = { path = "../ai" }
+leptos = { version = "0.7", features = ["csr"] }
+console_error_panic_hook = "0.1"
+js-sys = "0.3"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"

@@ -1,0 +1,205 @@
+//! UI-facing game controller.
+//!
+//! Wraps the rules [`Hand`] and the [`tg_ai`] bots into a single object the
+//! Leptos view drives: start a hand, submit the human's action, let the bots
+//! play until it's the human's turn again, and settle at showdown. It also
+//! computes the human's live equity — the odds readout PokerTH never showed.
+
+use tg_ai::{decide, equity, Tier};
+use tg_engine::hand::{Action, Hand, Payouts};
+use tg_engine::rng::Rng;
+
+/// The human always sits in seat 0.
+pub const HUMAN: usize = 0;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Phase {
+    /// Waiting for the human to act.
+    HumanTurn,
+    /// Hand finished; showing results until the player starts the next one.
+    HandOver,
+}
+
+pub struct Game {
+    pub hand: Hand,
+    /// Persistent chip stacks carried between hands (index by seat).
+    pub stacks: Vec<u32>,
+    pub button: usize,
+    pub sb: u32,
+    pub bb: u32,
+    /// Difficulty per seat; seat 0 (human) is ignored.
+    pub tiers: Vec<Tier>,
+    /// Display names per seat.
+    pub names: Vec<String>,
+    pub rng: Rng,
+    pub phase: Phase,
+    pub log: Vec<String>,
+    pub last_payouts: Option<Payouts>,
+    /// Human's Monte-Carlo equity for the current spot, if it's their turn.
+    pub hero_equity: Option<f64>,
+    pub hand_number: u32,
+}
+
+impl Game {
+    /// Create a new game. `opponents` bots plus the human, each starting with
+    /// `starting_stack` chips.
+    pub fn new(opponents: usize, starting_stack: u32, sb: u32, bb: u32, tier: Tier, seed: u64) -> Game {
+        let seats = opponents + 1;
+        let stacks = vec![starting_stack; seats];
+        let mut names = Vec::with_capacity(seats);
+        names.push("You".to_string());
+        for i in 1..seats {
+            names.push(format!("Bot {i}"));
+        }
+        let tiers = vec![tier; seats];
+
+        let mut rng = Rng::seed(seed);
+        let button = 0;
+        let hand = Hand::start(&stacks, button, sb, bb, &mut rng);
+
+        let mut game = Game {
+            hand,
+            stacks,
+            button,
+            sb,
+            bb,
+            tiers,
+            names,
+            rng,
+            phase: Phase::HumanTurn,
+            log: Vec::new(),
+            last_payouts: None,
+            hero_equity: None,
+            hand_number: 1,
+        };
+        game.log.push("New hand dealt.".to_string());
+        game.run_bots_until_human();
+        game
+    }
+
+    /// Seats that still have chips to play another hand.
+    fn solvent_seats(&self) -> usize {
+        self.stacks.iter().filter(|&&s| s > 0).count()
+    }
+
+    /// Begin the next hand, moving the button and re-seating stacks. Busted
+    /// seats (0 chips) sit out automatically via the engine.
+    pub fn next_hand(&mut self) {
+        if self.solvent_seats() < 2 {
+            self.log.push("Not enough players with chips. Game over.".to_string());
+            return;
+        }
+        // Advance the button to the next solvent seat.
+        let n = self.stacks.len();
+        let mut b = (self.button + 1) % n;
+        while self.stacks[b] == 0 {
+            b = (b + 1) % n;
+        }
+        self.button = b;
+        self.hand = Hand::start(&self.stacks, self.button, self.sb, self.bb, &mut self.rng);
+        self.phase = Phase::HumanTurn;
+        self.last_payouts = None;
+        self.hero_equity = None;
+        self.hand_number += 1;
+        self.log.push(format!("--- Hand #{} ---", self.hand_number));
+        self.run_bots_until_human();
+    }
+
+    /// Apply the human's chosen action, then let the bots respond.
+    pub fn human_action(&mut self, action: Action) {
+        if self.phase != Phase::HumanTurn || self.hand.to_act != Some(HUMAN) {
+            return;
+        }
+        self.log.push(format!("You {}", describe(&action, &self.hand)));
+        if self.hand.apply(action).is_err() {
+            return;
+        }
+        self.hero_equity = None;
+        self.run_bots_until_human();
+    }
+
+    /// Drive bot decisions until it is the human's turn or the hand ends.
+    fn run_bots_until_human(&mut self) {
+        loop {
+            if self.hand.is_over() {
+                self.finish_hand();
+                return;
+            }
+            match self.hand.to_act {
+                Some(HUMAN) => {
+                    self.phase = Phase::HumanTurn;
+                    self.compute_hero_equity();
+                    return;
+                }
+                Some(seat) => {
+                    let tier = self.tiers[seat];
+                    let action = decide(&self.hand, seat, tier, &mut self.rng);
+                    self.log.push(format!("{} {}", self.names[seat], describe(&action, &self.hand)));
+                    // A bot should always produce a legal action; if not, fold.
+                    if self.hand.apply(action).is_err() {
+                        let _ = self.hand.apply(Action::Fold);
+                    }
+                }
+                None => {
+                    // No one to act (e.g. all-in run-out) — settle.
+                    self.finish_hand();
+                    return;
+                }
+            }
+        }
+    }
+
+    fn finish_hand(&mut self) {
+        if self.phase == Phase::HandOver {
+            return;
+        }
+        let payouts = self.hand.settle();
+        // Sync persistent stacks from the settled hand.
+        for (i, seat) in self.hand.seats.iter().enumerate() {
+            self.stacks[i] = seat.stack;
+        }
+        for (i, &w) in payouts.winnings.iter().enumerate() {
+            if w > 0 {
+                self.log.push(format!("{} wins {w}", self.names[i]));
+            }
+        }
+        self.last_payouts = Some(payouts);
+        self.phase = Phase::HandOver;
+    }
+
+    fn compute_hero_equity(&mut self) {
+        if let Some(hole) = self.hand.seats[HUMAN].hole {
+            let opponents = self
+                .hand
+                .seats
+                .iter()
+                .enumerate()
+                .filter(|(i, s)| *i != HUMAN && s.in_hand())
+                .count();
+            // Fewer iterations than the bots use — this runs every human turn
+            // and only needs to be readable to two digits.
+            let eq = equity(hole, &self.hand.board, opponents.max(1), 800, &mut self.rng);
+            self.hero_equity = Some(eq);
+        }
+    }
+
+    pub fn is_game_over(&self) -> bool {
+        self.solvent_seats() < 2
+    }
+}
+
+/// Human-readable action, resolving `Call`/`Raise` amounts against the hand.
+fn describe(action: &Action, hand: &Hand) -> String {
+    match action {
+        Action::Fold => "folds".to_string(),
+        Action::Check => "checks".to_string(),
+        Action::Call => {
+            let cost = hand
+                .legal_actions()
+                .map(|l| l.call_cost)
+                .unwrap_or(0);
+            format!("calls {cost}")
+        }
+        Action::Raise { to } => format!("raises to {to}"),
+    }
+}

@@ -1,0 +1,12 @@
+# Rust build artifacts
+/target
+**/target
+
+# Trunk output
+/web/dist
+dist
+
+# Editor/OS cruft
+*.swp
+.DS_Store
+Thumbs.db

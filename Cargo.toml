@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = ["engine", "ai"]
+# The web app builds only for wasm via Trunk; keep it out of the native test
+# workspace so `cargo test` doesn't try to compile browser-only deps.
+exclude = ["web"]
+
+[workspace.package]
+edition = "2021"
+license = "AGPL-3.0-or-later"
+authors = ["Tilted Gorilla"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
