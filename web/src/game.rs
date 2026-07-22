@@ -51,11 +51,20 @@ pub struct Game {
 impl Game {
     /// Create a new game. `opponents` bots plus the human, each starting with
     /// `starting_stack` chips.
-    pub fn new(opponents: usize, starting_stack: u32, sb: u32, bb: u32, tier: Tier, seed: u64) -> Game {
+    pub fn new(
+        player_name: &str,
+        opponents: usize,
+        starting_stack: u32,
+        sb: u32,
+        bb: u32,
+        tier: Tier,
+        seed: u64,
+    ) -> Game {
         let seats = opponents + 1;
         let stacks = vec![starting_stack; seats];
         let mut names = Vec::with_capacity(seats);
-        names.push("You".to_string());
+        let hero = player_name.trim();
+        names.push(if hero.is_empty() { "Player".to_string() } else { hero.to_string() });
         for i in 1..seats {
             names.push(format!("Bot {i}"));
         }
@@ -118,7 +127,7 @@ impl Game {
         if self.phase != Phase::HumanTurn || self.hand.to_act != Some(HUMAN) {
             return;
         }
-        self.log.push(format!("You {}", describe(&action, &self.hand)));
+        self.log.push(format!("{} {}", self.names[HUMAN], describe(&action, &self.hand)));
         if self.hand.apply(action).is_err() {
             return;
         }

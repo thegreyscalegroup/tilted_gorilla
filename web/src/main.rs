@@ -88,6 +88,7 @@ fn App() -> impl IntoView {
     let muted = RwSignal::new(false);
 
     // Setup form state.
+    let player_name = RwSignal::new(String::new());
     let opponents = RwSignal::new(3usize);
     let difficulty = RwSignal::new(Tier::Grinder);
     let stack = RwSignal::new(1000u32);
@@ -111,6 +112,7 @@ fn App() -> impl IntoView {
 
     let deal = move |_| {
         let g = Game::new(
+            &player_name.get_untracked(),
             opponents.get(),
             stack.get(),
             (big_blind.get() / 2).max(1),
@@ -144,7 +146,7 @@ fn App() -> impl IntoView {
                     if has_game.get() {
                         table_view(game, bet_amount).into_any()
                     } else {
-                        setup_view(opponents, difficulty, stack, big_blind, deal).into_any()
+                        setup_view(player_name, opponents, difficulty, stack, big_blind, deal).into_any()
                     }
                 }
             }
@@ -154,6 +156,7 @@ fn App() -> impl IntoView {
 
 /// The pre-game configuration screen.
 fn setup_view(
+    player_name: RwSignal<String>,
     opponents: RwSignal<usize>,
     difficulty: RwSignal<Tier>,
     stack: RwSignal<u32>,
@@ -176,6 +179,14 @@ fn setup_view(
     view! {
         <div class="setup">
             <h2>"Table setup"</h2>
+
+            <label class="field">
+                <span>"Your name"</span>
+                <input type="text" class="name-input" maxlength="16" placeholder="Player"
+                    prop:value=move || player_name.get()
+                    on:input=move |ev| player_name.set(event_target_value(&ev))
+                />
+            </label>
 
             <label class="field">
                 <span>"Opponents: " {move || opponents.get()}</span>
@@ -406,7 +417,9 @@ fn table_view(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>) -> impl I
                         </div>
                         <div class="pod">
                             <div class="pod-info">
-                                <span class="name">"You"</span>
+                                <span class="name">
+                                    {move || game.with(|o| o.as_ref().map(|g| g.names[HUMAN].clone()).unwrap_or_default())}
+                                </span>
                                 <span class="stack">
                                     {move || game.with(|o| o.as_ref().unwrap().hand.seats[HUMAN].stack)}
                                 </span>

@@ -69,6 +69,13 @@
         .field { display: flex; flex-direction: column; gap: 8px; font-size: .95rem; }
         .field > span { color: var(--muted); }
         .field input[type=range] { width: 100%; accent-color: var(--accent); height: 6px; }
+        .name-input {
+            width: 100%; max-width: 260px; padding: 10px 12px; font-size: 1rem;
+            background: var(--panel-2); border: 1.5px solid var(--line); border-radius: 10px;
+            color: var(--text); outline: none;
+        }
+        .name-input:focus { border-color: var(--accent); }
+        .name-input::placeholder { color: var(--muted); }
         .tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
         .tier {
             display: flex; flex-direction: column; gap: 5px; text-align: left;
