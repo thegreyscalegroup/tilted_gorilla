@@ -3,6 +3,7 @@
 
 use crate::card::Card;
 use crate::deck::Deck;
+use crate::describe::{describe, describe_hole};
 use crate::eval::{eval5, eval7, Category};
 use crate::hand::{Action, Hand, SeatStatus, Street};
 use crate::pot::build_pots;
@@ -174,6 +175,34 @@ fn shuffle_still_yields_52_unique_cards() {
         assert!(seen.insert((c.rank, c.suit)));
     }
     assert_eq!(seen.len(), 52);
+}
+
+// ---- Hand descriptions --------------------------------------------------
+
+#[test]
+fn describes_made_hands() {
+    assert_eq!(describe(&eval5(&five("Kh Kc 2d 5s 9h"))), "Pair of Kings");
+    assert_eq!(describe(&eval5(&five("Ah Ac Kd Ks 9h"))), "Two pair, Aces and Kings");
+    assert_eq!(describe(&eval5(&five("9h 9c 9s 5d 2h"))), "Three of a kind, Nines");
+    assert_eq!(describe(&eval5(&five("9h 8c 7s 6d 5h"))), "Nine-high straight");
+    assert_eq!(describe(&eval5(&five("As Ks Qs Js 9s"))), "Flush, Ace high");
+    assert_eq!(describe(&eval5(&five("Ah Ac As Kd Kh"))), "Full house, Aces full of Kings");
+    assert_eq!(describe(&eval5(&five("7h 7c 7s 7d 2h"))), "Four of a kind, Sevens");
+    assert_eq!(describe(&eval5(&five("As Ks Qs Js Ts"))), "Royal flush");
+    assert_eq!(describe(&eval5(&five("9s 8s 7s 6s 5s"))), "Nine-high straight flush");
+    assert_eq!(describe(&eval5(&five("Ah Kc 9s 5d 2h"))), "Ace high");
+    // Wheel names by its five-high.
+    assert_eq!(describe(&eval5(&five("Ah 2c 3s 4d 5h"))), "Five-high straight");
+}
+
+#[test]
+fn describes_hole_cards() {
+    let c = |s| Card::parse(s).unwrap();
+    assert_eq!(describe_hole([c("Kh"), c("Kc")]), "Pair of Kings");
+    assert_eq!(describe_hole([c("As"), c("Ks")]), "Ace-King suited");
+    assert_eq!(describe_hole([c("Qh"), c("7c")]), "Queen-Seven offsuit");
+    // Order-independent: lower card first still names high card first.
+    assert_eq!(describe_hole([c("7c"), c("Qh")]), "Queen-Seven offsuit");
 }
 
 // ---- Side pots ----------------------------------------------------------

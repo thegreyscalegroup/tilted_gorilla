@@ -11,6 +11,7 @@ use leptos::prelude::*;
 
 use tg_ai::Tier;
 use tg_engine::card::{Card, Suit};
+use tg_engine::eval::Category;
 use tg_engine::hand::{Action, SeatStatus, Street};
 
 mod audio;
@@ -425,30 +426,60 @@ fn table_view(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>) -> impl I
                 </div>
             </div>
 
-            {move || equity_meter(game)}
+            {move || analysis_panel(game)}
             {move || controls(game, bet_amount)}
             {move || action_log(game)}
         </div>
     }
 }
 
-/// Win-probability meter — the odds readout PokerTH never offered.
-fn equity_meter(game: RwSignal<Option<Game>>) -> impl IntoView {
+/// Decision-aid panel: current hand name, win equity, and the odds of finishing
+/// as each category by the river — the PokerTH-style readout.
+fn analysis_panel(game: RwSignal<Option<Game>>) -> impl IntoView {
     game.with(|opt| {
         let g = opt.as_ref().unwrap();
-        match g.hero_equity {
-            Some(eq) => {
-                let pct = (eq * 100.0).round() as u32;
+        let Some(odds) = g.hero_odds else {
+            return ().into_any();
+        };
+        let pct = (g.hero_equity.unwrap_or(0.0) * 100.0).round() as u32;
+        let label = g.hero_label.clone().unwrap_or_default();
+
+        // Odds cells, strongest category first (like PokerTH).
+        let cells: Vec<_> = Category::ALL
+            .iter()
+            .rev()
+            .map(|cat| {
+                let p = odds[cat.index()];
+                let width = format!("{:.2}%", (p * 100.0).min(100.0));
+                let pct_txt = format!("{:.1}%", p * 100.0);
+                let dim = p < 0.001;
                 view! {
+                    <div class="odds-cell" class:dim=dim>
+                        <div class="oc-top">
+                            <span class="oc-name">{cat.label()}</span>
+                            <span class="oc-pct">{pct_txt}</span>
+                        </div>
+                        <div class="oc-bar"><div class="oc-fill" style:width=width></div></div>
+                    </div>
+                }
+            })
+            .collect();
+
+        view! {
+            <div class="analysis">
+                <div class="analysis-head">
+                    <span class="hand-strength">{label}</span>
                     <div class="equity">
-                        <span class="eq-label">"Your equity"</span>
-                        <div class="eq-bar"><div class="eq-fill" style:width=move || format!("{pct}%")></div></div>
+                        <span class="eq-label">"Win"</span>
+                        <div class="eq-bar"><div class="eq-fill" style:width=format!("{pct}%")></div></div>
                         <span class="eq-pct">{pct} "%"</span>
                     </div>
-                }.into_any()
-            }
-            None => ().into_any(),
+                </div>
+                <div class="odds-title">"Odds by the river"</div>
+                <div class="odds">{cells}</div>
+            </div>
         }
+        .into_any()
     })
 }
 

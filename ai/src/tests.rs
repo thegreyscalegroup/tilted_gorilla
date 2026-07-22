@@ -3,10 +3,12 @@
 //! and the policy's judgement are sound.
 
 use tg_engine::card::Card;
+use tg_engine::eval::Category;
 use tg_engine::hand::{Action, Hand};
 use tg_engine::rng::Rng;
 
 use crate::equity::equity;
+use crate::odds::outcome_distribution;
 use crate::policy::{decide, Tier};
 
 fn card(s: &str) -> Card {
@@ -51,6 +53,34 @@ fn more_opponents_lowers_equity() {
     let heads_up = equity(hero, &[], 1, 3000, &mut rng);
     let five_way = equity(hero, &[], 5, 3000, &mut rng);
     assert!(five_way < heads_up, "{five_way} should be < {heads_up}");
+}
+
+// ---- Outcome odds -------------------------------------------------------
+
+#[test]
+fn distribution_sums_to_one() {
+    let mut rng = Rng::seed(1);
+    let d = outcome_distribution([card("As"), card("Kd")], &cards("2h 7c 9s"), 2000, &mut rng);
+    let sum: f64 = d.iter().sum();
+    assert!((sum - 1.0).abs() < 1e-9, "distribution summed to {sum}");
+}
+
+#[test]
+fn complete_board_is_certain() {
+    let mut rng = Rng::seed(1);
+    // Hero holds the nut flush on a complete board.
+    let d = outcome_distribution([card("As"), card("Js")], &cards("Ks Qs 2s 7h 8d"), 50, &mut rng);
+    assert_eq!(d[Category::Flush.index()], 1.0);
+}
+
+#[test]
+fn turn_flush_draw_odds_are_reasonable() {
+    // Four spades on the turn (one card to come): P(flush) = 9 spades / 46 unseen
+    // ≈ 0.196.
+    let mut rng = Rng::seed(7);
+    let d = outcome_distribution([card("As"), card("Js")], &cards("Ks 2s 7h 8d"), 30000, &mut rng);
+    let p = d[Category::Flush.index()];
+    assert!(p > 0.15 && p < 0.24, "turn flush-draw odds were {p}");
 }
 
 // ---- Policy -------------------------------------------------------------

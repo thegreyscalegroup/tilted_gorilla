@@ -5,9 +5,11 @@
 //! engine; knows nothing about UI or WASM.
 
 pub mod equity;
+pub mod odds;
 pub mod policy;
 
 pub use equity::equity;
+pub use odds::outcome_distribution;
 pub use policy::{decide, Tier};
 
 #[cfg(test)]

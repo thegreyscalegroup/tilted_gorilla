@@ -6,9 +6,10 @@
 //! whole table resolving in a single instant. It also computes the human's live
 //! equity — the odds readout PokerTH never showed.
 
-use tg_ai::{decide, equity, Tier};
+use tg_ai::{decide, equity, outcome_distribution, Tier};
 use tg_engine::hand::{Action, Hand, Payouts};
 use tg_engine::rng::Rng;
+use tg_engine::describe_hole;
 
 /// The human always sits in seat 0.
 pub const HUMAN: usize = 0;
@@ -40,6 +41,10 @@ pub struct Game {
     pub last_payouts: Option<Payouts>,
     /// Human's Monte-Carlo equity for the current spot, if it's their turn.
     pub hero_equity: Option<f64>,
+    /// Natural-language name of the human's current hand (or starting hand).
+    pub hero_label: Option<String>,
+    /// Probability the human's hand finishes as each category (by river).
+    pub hero_odds: Option<[f64; 9]>,
     pub hand_number: u32,
 }
 
@@ -73,6 +78,8 @@ impl Game {
             log: Vec::new(),
             last_payouts: None,
             hero_equity: None,
+            hero_label: None,
+            hero_odds: None,
             hand_number: 1,
         };
         game.log.push("New hand dealt.".to_string());
@@ -100,7 +107,7 @@ impl Game {
         self.button = b;
         self.hand = Hand::start(&self.stacks, self.button, self.sb, self.bb, &mut self.rng);
         self.last_payouts = None;
-        self.hero_equity = None;
+        self.clear_hero_analysis();
         self.hand_number += 1;
         self.log.push(format!("--- Hand #{} ---", self.hand_number));
         self.after_state_change();
@@ -115,7 +122,6 @@ impl Game {
         if self.hand.apply(action).is_err() {
             return;
         }
-        self.hero_equity = None;
         self.after_state_change();
     }
 
@@ -153,7 +159,7 @@ impl Game {
             self.finish_hand();
         } else if self.hand.to_act == Some(HUMAN) {
             self.phase = Phase::HumanTurn;
-            self.compute_hero_equity();
+            self.compute_hero_analysis();
         } else {
             self.phase = Phase::BotsActing;
         }
@@ -173,21 +179,43 @@ impl Game {
             }
         }
         self.last_payouts = Some(payouts);
+        self.clear_hero_analysis();
         self.phase = Phase::HandOver;
     }
 
-    fn compute_hero_equity(&mut self) {
-        if let Some(hole) = self.hand.seats[HUMAN].hole {
-            let opponents = self
-                .hand
-                .seats
-                .iter()
-                .enumerate()
-                .filter(|(i, s)| *i != HUMAN && s.in_hand())
-                .count();
-            let eq = equity(hole, &self.hand.board, opponents.max(1), 800, &mut self.rng);
-            self.hero_equity = Some(eq);
-        }
+    fn clear_hero_analysis(&mut self) {
+        self.hero_equity = None;
+        self.hero_label = None;
+        self.hero_odds = None;
+    }
+
+    /// Compute the human's decision aids: win equity, current hand name, and the
+    /// odds of finishing as each category — the PokerTH-style readout.
+    fn compute_hero_analysis(&mut self) {
+        let Some(hole) = self.hand.seats[HUMAN].hole else { return };
+        let board = &self.hand.board;
+        let opponents = self
+            .hand
+            .seats
+            .iter()
+            .enumerate()
+            .filter(|(i, s)| *i != HUMAN && s.in_hand())
+            .count();
+
+        self.hero_equity = Some(equity(hole, board, opponents.max(1), 800, &mut self.rng));
+
+        // With a made board (5+ cards total) name the current hand; pre-flop,
+        // name the starting hand.
+        self.hero_label = Some(if board.len() >= 3 {
+            let mut seven = board.clone();
+            seven.push(hole[0]);
+            seven.push(hole[1]);
+            tg_engine::describe(&tg_engine::eval7(&seven))
+        } else {
+            describe_hole(hole)
+        });
+
+        self.hero_odds = Some(outcome_distribution(hole, board, 2500, &mut self.rng));
     }
 
     pub fn is_game_over(&self) -> bool {

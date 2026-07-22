@@ -23,6 +23,41 @@ pub enum Category {
     StraightFlush,
 }
 
+impl Category {
+    /// All categories, weakest → strongest.
+    pub const ALL: [Category; 9] = [
+        Category::HighCard,
+        Category::OnePair,
+        Category::TwoPair,
+        Category::ThreeOfAKind,
+        Category::Straight,
+        Category::Flush,
+        Category::FullHouse,
+        Category::FourOfAKind,
+        Category::StraightFlush,
+    ];
+
+    /// Stable 0..9 index (matches `ALL` ordering) for tallying distributions.
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
+    /// Short display name for an odds table.
+    pub fn label(self) -> &'static str {
+        match self {
+            Category::HighCard => "High card",
+            Category::OnePair => "Pair",
+            Category::TwoPair => "Two pair",
+            Category::ThreeOfAKind => "Trips",
+            Category::Straight => "Straight",
+            Category::Flush => "Flush",
+            Category::FullHouse => "Full house",
+            Category::FourOfAKind => "Quads",
+            Category::StraightFlush => "Str. flush",
+        }
+    }
+}
+
 /// A fully comparable hand strength.
 ///
 /// Field order matters: `category` is compared first, then `tiebreak` — a list

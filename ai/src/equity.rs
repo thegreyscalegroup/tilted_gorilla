@@ -79,7 +79,7 @@ pub fn equity(hero: [Card; 2], board: &[Card], opponents: usize, iters: usize, r
     score / iters as f64
 }
 
-fn index(c: Card) -> usize {
+pub(crate) fn index(c: Card) -> usize {
     let suit = match c.suit {
         Suit::Clubs => 0,
         Suit::Diamonds => 1,
@@ -89,11 +89,11 @@ fn index(c: Card) -> usize {
     suit * 13 + (c.rank - MIN_RANK) as usize
 }
 
-fn mark(known: &mut [bool; 52], c: Card) {
+pub(crate) fn mark(known: &mut [bool; 52], c: Card) {
     known[index(c)] = true;
 }
 
-fn all_cards() -> Vec<Card> {
+pub(crate) fn all_cards() -> Vec<Card> {
     let mut v = Vec::with_capacity(52);
     for suit in Suit::ALL {
         for rank in MIN_RANK..=MAX_RANK {

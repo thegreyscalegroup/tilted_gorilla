@@ -225,12 +225,15 @@
         .board .card { width: 46px; height: 66px; }
         .board .card .pip { font-size: 1.8rem; }
 
-        /* ---- Equity meter ---- */
-        .equity {
-            display: flex; align-items: center; gap: 12px;
+        /* ---- Analysis panel: hand strength + equity + outcome odds ---- */
+        .analysis {
             background: linear-gradient(180deg, var(--panel), #131c25);
-            border: 1px solid var(--line); padding: 12px 16px; border-radius: 12px;
+            border: 1px solid var(--line); padding: 14px 16px; border-radius: 12px;
+            display: flex; flex-direction: column; gap: 12px;
         }
+        .analysis-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+        .hand-strength { font-size: 1.15rem; font-weight: 700; color: var(--gold); flex: 1; min-width: 160px; }
+        .equity { display: flex; align-items: center; gap: 10px; min-width: 240px; flex: 1; }
         .eq-label { color: var(--muted); font-size: .82rem; white-space: nowrap; font-weight: 600; }
         .eq-bar { flex: 1; height: 12px; background: #0d151c; border-radius: 6px; overflow: hidden;
             box-shadow: inset 0 1px 3px rgba(0,0,0,.6); }
@@ -239,6 +242,18 @@
             transition: width .35s ease; }
         .eq-pct { font-weight: 800; color: var(--gold); min-width: 46px; text-align: right;
             font-variant-numeric: tabular-nums; }
+        .odds-title { color: var(--muted); font-size: .72rem; letter-spacing: 1.5px; text-transform: uppercase; font-weight: 600; }
+        .odds { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px 14px; }
+        .odds-cell { display: flex; flex-direction: column; gap: 3px; transition: opacity .2s; }
+        .odds-cell.dim { opacity: .38; }
+        .oc-top { display: flex; justify-content: space-between; font-size: .8rem; }
+        .oc-name { color: var(--text); }
+        .oc-pct { color: var(--gold); font-variant-numeric: tabular-nums; font-weight: 700; }
+        .oc-bar { height: 6px; background: #0d151c; border-radius: 4px; overflow: hidden;
+            box-shadow: inset 0 1px 2px rgba(0,0,0,.6); }
+        .oc-fill { height: 100%; border-radius: 4px;
+            background: linear-gradient(90deg, var(--accent-2), var(--accent));
+            transition: width .35s ease; }
 
         /* ---- Controls ---- */
         .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; min-height: 50px; }
