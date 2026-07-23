@@ -86,6 +86,7 @@ fn App() -> impl IntoView {
     let game = RwSignal::new(None::<Game>);
     let bet_amount = RwSignal::new(0u32);
     let muted = RwSignal::new(false);
+    let log_open = RwSignal::new(false);
 
     // Setup form state.
     let player_name = RwSignal::new(String::new());
@@ -144,7 +145,7 @@ fn App() -> impl IntoView {
                 let has_game = Memo::new(move |_| game.with(Option::is_some));
                 move || {
                     if has_game.get() {
-                        table_view(game, bet_amount).into_any()
+                        table_view(game, bet_amount, log_open).into_any()
                     } else {
                         setup_view(player_name, opponents, difficulty, stack, big_blind, deal).into_any()
                     }
@@ -357,6 +358,9 @@ fn opp_seat(game: RwSignal<Option<Game>>, i: usize, total: usize) -> impl IntoVi
                 {move || game.with(|o| o.as_ref().map_or(false, |g| g.button == i))
                     .then(|| view! { <span class="btn-chip">"D"</span> })}
                 {move || status_badge(game.with(|o| o.as_ref().map_or(SeatStatus::SittingOut, |g| g.hand.seats[i].status)))}
+                {move || game
+                    .with(|o| o.as_ref().and_then(|g| g.last_action.get(i).cloned().flatten()))
+                    .map(|(label, kind)| view! { <div class=format!("action-tag {kind}")>{label}</div> })}
             </div>
             {move || {
                 let bet = game.with(|o| o.as_ref().map_or(0, |g| g.hand.seats[i].street_bet));
@@ -368,7 +372,11 @@ fn opp_seat(game: RwSignal<Option<Game>>, i: usize, total: usize) -> impl IntoVi
 
 /// The live poker table. Built once (gated by a `Memo` upstream); everything
 /// that changes during play is a fine-grained reactive block inside it.
-fn table_view(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>) -> impl IntoView {
+fn table_view(
+    game: RwSignal<Option<Game>>,
+    bet_amount: RwSignal<u32>,
+    log_open: RwSignal<bool>,
+) -> impl IntoView {
     // Seat count is fixed for the life of a game, so capture it once —
     // *untracked*, so building the table does not subscribe the enclosing
     // switch closure to the game signal (which would rebuild the whole table,
@@ -441,7 +449,7 @@ fn table_view(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>) -> impl I
 
             {move || analysis_panel(game)}
             {move || controls(game, bet_amount)}
-            {move || action_log(game)}
+            {move || action_log(game, log_open)}
         </div>
     }
 }
@@ -590,19 +598,33 @@ fn controls(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>) -> impl Int
     })
 }
 
-/// Scrolling text log of recent actions.
-fn action_log(game: RwSignal<Option<Game>>) -> impl IntoView {
-    game.with(|opt| {
-        let g = opt.as_ref().unwrap();
-        let lines: Vec<_> = g
-            .log
-            .iter()
-            .rev()
-            .take(10)
-            .map(|l| view! { <div class="log-line">{l.clone()}</div> })
-            .collect();
-        view! { <div class="log">{lines}</div> }
-    })
+/// Collapsible action log. Minimized by default — just a toggle bar; expands to
+/// the recent lines. The on-table action tags cover most of what you need while
+/// the log stays out of the way.
+fn action_log(game: RwSignal<Option<Game>>, log_open: RwSignal<bool>) -> impl IntoView {
+    let open = log_open.get();
+    let lines: Vec<String> = if open {
+        game.with(|o| {
+            o.as_ref()
+                .map(|g| g.log.iter().rev().take(12).cloned().collect())
+                .unwrap_or_default()
+        })
+    } else {
+        Vec::new()
+    };
+
+    view! {
+        <div class="log-panel">
+            <button class="log-toggle" on:click=move |_| log_open.update(|v| *v = !*v)>
+                {if open { "▾ Hide action log" } else { "▸ Show action log" }}
+            </button>
+            {open.then(|| view! {
+                <div class="log">
+                    {lines.into_iter().map(|l| view! { <div class="log-line">{l}</div> }).collect::<Vec<_>>()}
+                </div>
+            })}
+        </div>
+    }
 }
 
 fn status_badge(status: SeatStatus) -> impl IntoView {

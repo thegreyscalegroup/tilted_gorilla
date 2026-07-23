@@ -280,11 +280,33 @@
         .result { font-size: 1.1rem; color: var(--gold); font-weight: 700; }
         .controls.thinking { color: var(--muted); font-style: italic; align-items: center; }
 
-        /* ---- Log ---- */
+        /* ---- On-table action tag ---- */
+        .action-tag {
+            position: absolute; bottom: calc(100% + 6px); left: 50%;
+            transform: translateX(-50%);
+            padding: 2px 10px; border-radius: 10px; font-size: .72rem; font-weight: 700;
+            white-space: nowrap; letter-spacing: .3px; color: #fff;
+            box-shadow: 0 3px 8px rgba(0,0,0,.5); z-index: 5;
+            animation: tagPop .18s ease both;
+        }
+        .action-tag.fold { background: #82404b; }
+        .action-tag.check { background: #52697a; }
+        .action-tag.call { background: linear-gradient(180deg, #3f86c0, #2c6a9e); }
+        .action-tag.raise { background: linear-gradient(180deg, #46d69b, var(--accent-2)); color: #04150e; }
+        .action-tag.allin { background: linear-gradient(180deg, var(--gold), var(--gold-dim)); color: #3a2c05; }
+
+        /* ---- Log (collapsible) ---- */
+        .log-panel { display: flex; flex-direction: column; gap: 8px; }
+        .log-toggle {
+            align-self: flex-start; background: var(--panel-2); border: 1px solid var(--line);
+            color: var(--muted); font-size: .82rem; font-weight: 600; cursor: pointer;
+            border-radius: 10px; padding: 8px 14px; transition: background .15s, color .15s;
+        }
+        .log-toggle:hover { background: #2c3d4c; color: var(--text); }
         .log {
             background: linear-gradient(180deg, var(--panel), #131c25);
             border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px;
-            font-size: .84rem; color: var(--muted); max-height: 140px; overflow-y: auto;
+            font-size: .84rem; color: var(--muted); max-height: 160px; overflow-y: auto;
             display: flex; flex-direction: column; gap: 3px;
         }
         .log-line:first-child { color: var(--text); font-weight: 600; }
@@ -297,6 +319,10 @@
         @keyframes chipPop {
             from { opacity: 0; transform: scale(.4); }
             to   { opacity: 1; transform: scale(1); }
+        }
+        @keyframes tagPop {
+            from { opacity: 0; transform: translateX(-50%) translateY(5px) scale(.8); }
+            to   { opacity: 1; transform: translateX(-50%); }
         }
         .board .card:not(.slot),
         .seat.hero .hole .card { animation: dealIn .32s cubic-bezier(.2,.8,.3,1.2) both; }

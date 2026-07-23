@@ -7,9 +7,12 @@
 //! equity — the odds readout PokerTH never showed.
 
 use tg_ai::{decide, equity, outcome_distribution, Tier};
-use tg_engine::hand::{Action, Hand, Payouts};
+use tg_engine::hand::{Action, Hand, Payouts, SeatStatus};
 use tg_engine::rng::Rng;
 use tg_engine::describe_hole;
+
+/// A brief on-table label for a seat's most recent action, with a CSS-kind class.
+pub type ActionTag = (String, &'static str);
 
 /// The human always sits in seat 0.
 pub const HUMAN: usize = 0;
@@ -45,6 +48,8 @@ pub struct Game {
     pub hero_label: Option<String>,
     /// Probability the human's hand finishes as each category (by river).
     pub hero_odds: Option<[f64; 9]>,
+    /// Each seat's most recent action this street, for the on-table tag.
+    pub last_action: Vec<Option<ActionTag>>,
     pub hand_number: u32,
 }
 
@@ -89,6 +94,7 @@ impl Game {
             hero_equity: None,
             hero_label: None,
             hero_odds: None,
+            last_action: vec![None; seats],
             hand_number: 1,
         };
         game.log.push("New hand dealt.".to_string());
@@ -117,6 +123,9 @@ impl Game {
         self.hand = Hand::start(&self.stacks, self.button, self.sb, self.bb, &mut self.rng);
         self.last_payouts = None;
         self.clear_hero_analysis();
+        for a in self.last_action.iter_mut() {
+            *a = None;
+        }
         self.hand_number += 1;
         self.log.push(format!("--- Hand #{} ---", self.hand_number));
         self.after_state_change();
@@ -128,9 +137,11 @@ impl Game {
             return;
         }
         self.log.push(format!("{} {}", self.names[HUMAN], describe(&action, &self.hand)));
+        let street_before = self.hand.street;
         if self.hand.apply(action).is_err() {
             return;
         }
+        self.record_action(HUMAN, &action, street_before);
         self.after_state_change();
     }
 
@@ -154,11 +165,35 @@ impl Game {
         let tier = self.tiers[seat];
         let action = decide(&self.hand, seat, tier, &mut self.rng);
         self.log.push(format!("{} {}", self.names[seat], describe(&action, &self.hand)));
+        let street_before = self.hand.street;
         if self.hand.apply(action).is_err() {
             let _ = self.hand.apply(Action::Fold);
         }
+        self.record_action(seat, &action, street_before);
         self.after_state_change();
         Some(action)
+    }
+
+    /// Store a seat's action as an on-table tag. When the action closes a
+    /// street (the board advances), clear every tag so labels never linger from
+    /// a previous street.
+    fn record_action(&mut self, seat: usize, action: &Action, street_before: tg_engine::hand::Street) {
+        if self.hand.street != street_before {
+            for a in self.last_action.iter_mut() {
+                *a = None;
+            }
+            return;
+        }
+        let all_in = self.hand.seats[seat].status == SeatStatus::AllIn;
+        let tag: ActionTag = match action {
+            Action::Fold => ("Fold".into(), "fold"),
+            Action::Check => ("Check".into(), "check"),
+            Action::Call if all_in => ("All-in".into(), "allin"),
+            Action::Call => ("Call".into(), "call"),
+            Action::Raise { .. } if all_in => ("All-in".into(), "allin"),
+            Action::Raise { .. } => ("Raise".into(), "raise"),
+        };
+        self.last_action[seat] = Some(tag);
     }
 
     /// Recompute the phase after any state change: end the hand, hand the turn
