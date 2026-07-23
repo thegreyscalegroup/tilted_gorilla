@@ -28,6 +28,63 @@ fn seed() -> u64 {
     js_sys::Date::now() as u64 ^ 0x9E37_79B9_7F4A_7C15
 }
 
+const INTRO_SEEN_KEY: &str = "tg_intro_seen";
+
+/// Whether the intro has already played this browser session (sessionStorage).
+fn intro_seen() -> bool {
+    web_sys::window()
+        .and_then(|w| w.session_storage().ok().flatten())
+        .and_then(|s| s.get_item(INTRO_SEEN_KEY).ok().flatten())
+        .as_deref()
+        == Some("1")
+}
+
+/// Remember that the intro played, so refreshes this session skip it.
+fn mark_intro_seen() {
+    if let Some(store) = web_sys::window().and_then(|w| w.session_storage().ok().flatten()) {
+        let _ = store.set_item(INTRO_SEEN_KEY, "1");
+    }
+}
+
+/// Cinematic intro: the tuxedo gorilla flips the table (a 3s MP4) and holds on
+/// the club logo, gated by an "Enter" button. Muted autoplay so browsers allow
+/// it; "Skip" jumps ahead during playback. A fallback timer reveals "Enter" even
+/// if `ended` never fires. Hidden under `prefers-reduced-motion`.
+fn intro_splash(intro_done: RwSignal<bool>) -> impl IntoView {
+    let fading = RwSignal::new(false);
+    let ended = RwSignal::new(false);
+    let finish = move || {
+        mark_intro_seen();
+        fading.set(true);
+        set_timeout(move || intro_done.set(true), std::time::Duration::from_millis(450));
+    };
+    // Reveal "Enter" even if the `ended` event never fires (e.g. autoplay
+    // blocked). Generous margin so a normally-playing 3.0s clip ends first and
+    // "Enter" lands on the held logo frame.
+    set_timeout(move || ended.set(true), std::time::Duration::from_millis(5000));
+    view! {
+        <div class="intro" class:fade=move || fading.get()>
+            <video class="intro-video"
+                src="assets/intro.mp4"
+                autoplay=true muted=true playsinline=true preload="auto"
+                prop:muted=true
+                on:ended=move |_| ended.set(true)
+            ></video>
+            {move || ended.get().then(|| view! {
+                <div class="intro-end">
+                    <div class="intro-logo">
+                        <img src="assets/logo_end.png" alt="The Tilted Gorilla Poker Club" />
+                    </div>
+                    <button class="intro-enter" on:click=move |_| finish()>"Enter"</button>
+                </div>
+            })}
+            {move || (!ended.get()).then(|| view! {
+                <button class="intro-skip" on:click=move |_| finish()>"Skip \u{203a}"</button>
+            })}
+        </div>
+    }
+}
+
 /// Stable per-card key (0..52) so keyed rendering only animates *new* cards.
 fn card_key(c: Card) -> u8 {
     let suit = match c.suit {
@@ -87,6 +144,8 @@ fn App() -> impl IntoView {
     let bet_amount = RwSignal::new(0u32);
     let muted = RwSignal::new(false);
     let log_open = RwSignal::new(false);
+    // Play the intro only once per browser session.
+    let intro_done = RwSignal::new(intro_seen());
 
     // Setup form state.
     let player_name = RwSignal::new(String::new());
@@ -128,6 +187,7 @@ fn App() -> impl IntoView {
 
     view! {
         <div class="app">
+            {move || (!intro_done.get()).then(|| intro_splash(intro_done))}
             <header class="topbar">
                 <h1>"🦍 The Tilted Gorilla"</h1>
                 <button class="mute" on:click=move |_| {
