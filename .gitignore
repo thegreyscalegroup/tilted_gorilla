@@ -6,6 +6,9 @@
 /web/dist
 dist
 
+# Wrangler / Cloudflare cache
+.wrangler
+
 # Editor/OS cruft
 *.swp
 .DS_Store
