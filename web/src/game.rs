@@ -217,10 +217,26 @@ impl Game {
         for (i, seat) in self.hand.seats.iter().enumerate() {
             self.stacks[i] = seat.stack;
         }
+        // A contested showdown reaches the river with 2+ players still in; only
+        // then did a winner actually show a hand worth naming.
+        let contested = self.hand.seats.iter().filter(|s| s.in_hand()).count() >= 2
+            && self.hand.board.len() == 5;
         for (i, &w) in payouts.winnings.iter().enumerate() {
-            if w > 0 {
-                self.log.push(format!("{} wins {w}", self.names[i]));
+            if w == 0 {
+                continue;
             }
+            let name = &self.names[i];
+            let with = contested
+                .then(|| self.hand.seats[i].hole)
+                .flatten()
+                .map(|hole| {
+                    let mut seven = self.hand.board.clone();
+                    seven.push(hole[0]);
+                    seven.push(hole[1]);
+                    format!(" with {}", lower_first(tg_engine::describe(&tg_engine::eval7(&seven))))
+                })
+                .unwrap_or_default();
+            self.log.push(format!("{name} wins {w}{with}"));
         }
         self.last_payouts = Some(payouts);
         self.clear_hero_analysis();
@@ -264,6 +280,16 @@ impl Game {
 
     pub fn is_game_over(&self) -> bool {
         self.solvent_seats() < 2
+    }
+}
+
+/// Lowercase just the first character, so a capitalized hand name reads
+/// naturally mid-sentence ("wins with pair of Kings").
+fn lower_first(s: String) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(first) => first.to_lowercase().collect::<String>() + chars.as_str(),
+        None => s,
     }
 }
 
