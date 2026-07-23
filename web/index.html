@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Tilted Gorilla — Browser Poker</title>
+    <title>The Tilted Gorilla</title>
     <link data-trunk rel="rust" data-wasm-opt="z" />
     <link data-trunk rel="copy-dir" href="assets" />
     <style>
@@ -107,7 +107,7 @@
 
         /* ---- Center: pot + board ---- */
         .center {
-            position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+            position: absolute; left: 50%; top: 43%; transform: translate(-50%, -50%);
             display: flex; flex-direction: column; align-items: center; gap: 7px; width: 66%;
         }
         .pot-area { display: flex; align-items: center; gap: 10px; min-height: 30px; }
@@ -190,7 +190,8 @@
         .chip.bet .chip-amt { font-size: .68rem; }
 
         /* ---- Cards ---- */
-        .hole { display: flex; gap: 5px; justify-content: center; }
+        .hole { display: flex; gap: 5px; justify-content: center; align-items: center; position: relative; }
+        .seat.opp .hole { min-height: 46px; }
         .card {
             position: relative; width: 46px; height: 66px; border-radius: 7px;
             background: linear-gradient(160deg, #ffffff, #f0f1ec);
@@ -282,11 +283,11 @@
 
         /* ---- On-table action tag ---- */
         .action-tag {
-            position: absolute; bottom: calc(100% + 6px); left: 50%;
-            transform: translateX(-50%);
-            padding: 2px 10px; border-radius: 10px; font-size: .72rem; font-weight: 700;
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 3px 11px; border-radius: 10px; font-size: .74rem; font-weight: 700;
             white-space: nowrap; letter-spacing: .3px; color: #fff;
-            box-shadow: 0 3px 8px rgba(0,0,0,.5); z-index: 5;
+            box-shadow: 0 3px 10px rgba(0,0,0,.6); z-index: 6;
             animation: tagPop .18s ease both;
         }
         .action-tag.fold { background: #82404b; }
@@ -321,8 +322,8 @@
             to   { opacity: 1; transform: scale(1); }
         }
         @keyframes tagPop {
-            from { opacity: 0; transform: translateX(-50%) translateY(5px) scale(.8); }
-            to   { opacity: 1; transform: translateX(-50%); }
+            from { opacity: 0; transform: translate(-50%, -50%) scale(.78); }
+            to   { opacity: 1; transform: translate(-50%, -50%); }
         }
         .board .card:not(.slot),
         .seat.hero .hole .card { animation: dealIn .32s cubic-bezier(.2,.8,.3,1.2) both; }

@@ -129,7 +129,7 @@ fn App() -> impl IntoView {
     view! {
         <div class="app">
             <header class="topbar">
-                <h1>"🦍 Tilted Gorilla"</h1>
+                <h1>"🦍 The Tilted Gorilla"</h1>
                 <button class="mute" on:click=move |_| {
                     let m = !muted.get();
                     muted.set(m);
@@ -349,6 +349,9 @@ fn opp_seat(game: RwSignal<Option<Game>>, i: usize, total: usize) -> impl IntoVi
                     HoleView::Faces(a, b) => vec![card_face(a).into_any(), card_face(b).into_any()],
                     HoleView::Empty => vec![],
                 }}
+                {move || game
+                    .with(|o| o.as_ref().and_then(|g| g.last_action.get(i).cloned().flatten()))
+                    .map(|(label, kind)| view! { <div class=format!("action-tag {kind}")>{label}</div> })}
             </div>
             <div class="pod">
                 <div class="pod-info">
@@ -358,9 +361,6 @@ fn opp_seat(game: RwSignal<Option<Game>>, i: usize, total: usize) -> impl IntoVi
                 {move || game.with(|o| o.as_ref().map_or(false, |g| g.button == i))
                     .then(|| view! { <span class="btn-chip">"D"</span> })}
                 {move || status_badge(game.with(|o| o.as_ref().map_or(SeatStatus::SittingOut, |g| g.hand.seats[i].status)))}
-                {move || game
-                    .with(|o| o.as_ref().and_then(|g| g.last_action.get(i).cloned().flatten()))
-                    .map(|(label, kind)| view! { <div class=format!("action-tag {kind}")>{label}</div> })}
             </div>
             {move || {
                 let bet = game.with(|o| o.as_ref().map_or(0, |g| g.hand.seats[i].street_bet));
