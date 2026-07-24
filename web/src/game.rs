@@ -17,6 +17,14 @@ pub type ActionTag = (String, &'static str);
 /// The human always sits in seat 0.
 pub const HUMAN: usize = 0;
 
+/// Random display names for the AI opponents (max 7 seated, pool is larger so
+/// repeats are rare across sessions).
+const BOT_NAMES: [&str; 32] = [
+    "Axel", "Nadia", "Marco", "Priya", "Dario", "Elena", "Ivan", "Sofia", "Bruno", "Lena",
+    "Cole", "Mika", "Rafa", "Tessa", "Omar", "Vera", "Nash", "Gia", "Kane", "Luca", "Rosa",
+    "Finn", "Ada", "Zane", "Nina", "Reid", "Yuki", "Diego", "Mara", "Theo", "Isla", "Sven",
+];
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Phase {
     /// Waiting for the human to act.
@@ -50,6 +58,10 @@ pub struct Game {
     pub hero_odds: Option<[f64; 9]>,
     /// Each seat's most recent action this street, for the on-table tag.
     pub last_action: Vec<Option<ActionTag>>,
+    /// At a contested showdown, each seat's final hand description (else None).
+    pub showdown_hands: Vec<Option<String>>,
+    /// Which seats won chips in the last settled hand.
+    pub winners: Vec<bool>,
     pub hand_number: u32,
 }
 
@@ -67,15 +79,19 @@ impl Game {
     ) -> Game {
         let seats = opponents + 1;
         let stacks = vec![starting_stack; seats];
+        let mut rng = Rng::seed(seed);
+
+        // Seat 0 is the human; opponents get distinct random names.
         let mut names = Vec::with_capacity(seats);
         let hero = player_name.trim();
         names.push(if hero.is_empty() { "Player".to_string() } else { hero.to_string() });
-        for i in 1..seats {
-            names.push(format!("Bot {i}"));
+        let mut pool: Vec<&str> = BOT_NAMES.to_vec();
+        rng.shuffle(&mut pool);
+        for name in pool.into_iter().take(opponents) {
+            names.push(name.to_string());
         }
         let tiers = vec![tier; seats];
 
-        let mut rng = Rng::seed(seed);
         let button = 0;
         let hand = Hand::start(&stacks, button, sb, bb, &mut rng);
 
@@ -95,6 +111,8 @@ impl Game {
             hero_label: None,
             hero_odds: None,
             last_action: vec![None; seats],
+            showdown_hands: vec![None; seats],
+            winners: vec![false; seats],
             hand_number: 1,
         };
         game.log.push("New hand dealt.".to_string());
@@ -125,6 +143,12 @@ impl Game {
         self.clear_hero_analysis();
         for a in self.last_action.iter_mut() {
             *a = None;
+        }
+        for s in self.showdown_hands.iter_mut() {
+            *s = None;
+        }
+        for w in self.winners.iter_mut() {
+            *w = false;
         }
         self.hand_number += 1;
         self.log.push(format!("--- Hand #{} ---", self.hand_number));
@@ -221,6 +245,25 @@ impl Game {
         // then did a winner actually show a hand worth naming.
         let contested = self.hand.seats.iter().filter(|s| s.in_hand()).count() >= 2
             && self.hand.board.len() == 5;
+
+        // Clear stale action tags and record who won + each shown hand, so the
+        // table can display final hands at showdown.
+        for a in self.last_action.iter_mut() {
+            *a = None;
+        }
+        for i in 0..self.hand.seats.len() {
+            self.winners[i] = payouts.winnings.get(i).is_some_and(|&w| w > 0);
+            self.showdown_hands[i] = if contested && self.hand.seats[i].in_hand() {
+                self.hand.seats[i].hole.map(|hole| {
+                    let mut seven = self.hand.board.clone();
+                    seven.push(hole[0]);
+                    seven.push(hole[1]);
+                    tg_engine::describe(&tg_engine::eval7(&seven))
+                })
+            } else {
+                None
+            };
+        }
         for (i, &w) in payouts.winnings.iter().enumerate() {
             if w == 0 {
                 continue;
@@ -265,15 +308,21 @@ impl Game {
         self.hero_equity = Some(equity(hole, board, opponents.max(1), 800, &mut self.rng));
 
         // With a made board (5+ cards total) name the current hand; pre-flop,
-        // name the starting hand.
-        self.hero_label = Some(if board.len() >= 3 {
+        // name the starting hand. Then append any live draws.
+        let mut label = if board.len() >= 3 {
             let mut seven = board.clone();
             seven.push(hole[0]);
             seven.push(hole[1]);
             tg_engine::describe(&tg_engine::eval7(&seven))
         } else {
             describe_hole(hole)
-        });
+        };
+        let draws = tg_engine::draws(hole, board);
+        if !draws.is_empty() {
+            label.push_str(" · ");
+            label.push_str(&draws.join(", "));
+        }
+        self.hero_label = Some(label);
 
         self.hero_odds = Some(outcome_distribution(hole, board, 2500, &mut self.rng));
     }

@@ -2,7 +2,7 @@
 //! "Ace-King suited"). Pure formatting over a [`HandValue`] or two hole cards —
 //! the UI uses these for the hand-strength label.
 
-use crate::card::Card;
+use crate::card::{Card, Suit};
 use crate::eval::{Category, HandValue};
 
 /// Singular rank name, e.g. 14 → "Ace", 10 → "Ten".
@@ -73,6 +73,71 @@ pub fn describe(v: &HandValue) -> String {
             }
         }
     }
+}
+
+/// Detect drawing hands (flush / straight draws) from the hole cards plus the
+/// current board. Returns short labels like "flush draw", "open-ended straight
+/// draw", "gutshot straight draw". Only meaningful on the flop and turn (5–6
+/// cards total); returns nothing pre-flop or once the board is complete, and
+/// nothing when the draw is already a made hand.
+pub fn draws(hole: [Card; 2], board: &[Card]) -> Vec<&'static str> {
+    let mut cards: Vec<Card> = board.to_vec();
+    cards.push(hole[0]);
+    cards.push(hole[1]);
+    // Only flop (5) and turn (6) have live draws worth calling out.
+    if cards.len() < 5 || cards.len() > 6 {
+        return Vec::new();
+    }
+
+    let mut out = Vec::new();
+
+    // Flush draw: exactly four of one suit (five+ is a made flush, not a draw).
+    let mut suit_counts = [0u8; 4];
+    for c in &cards {
+        let idx = match c.suit {
+            Suit::Clubs => 0,
+            Suit::Diamonds => 1,
+            Suit::Hearts => 2,
+            Suit::Spades => 3,
+        };
+        suit_counts[idx] += 1;
+    }
+    if suit_counts.iter().any(|&n| n == 4) {
+        out.push("flush draw");
+    }
+
+    // Straight draw: over every 5-rank window, count distinct ranks held. Ace
+    // plays high and low. If we hold exactly 4 of a window, the fifth completes
+    // a straight; a made straight (all 5) suppresses the draw.
+    let mut present = [false; 15]; // ranks 1..=14, with 1 = ace-low
+    for c in &cards {
+        present[c.rank as usize] = true;
+    }
+    if present[14] {
+        present[1] = true;
+    }
+    let mut made = false;
+    let mut completing = std::collections::BTreeSet::new();
+    for low in 1..=10usize {
+        let window = [low, low + 1, low + 2, low + 3, low + 4];
+        let held = window.iter().filter(|&&r| present[r]).count();
+        if held == 5 {
+            made = true;
+        } else if held == 4 {
+            if let Some(&miss) = window.iter().find(|&&r| !present[r]) {
+                completing.insert(if miss == 1 { 14 } else { miss });
+            }
+        }
+    }
+    if !made {
+        match completing.len() {
+            0 => {}
+            1 => out.push("gutshot straight draw"),
+            _ => out.push("open-ended straight draw"),
+        }
+    }
+
+    out
 }
 
 /// Describe two hole cards the way players name starting hands, e.g.

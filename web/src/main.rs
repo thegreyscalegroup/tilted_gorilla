@@ -114,24 +114,49 @@ fn play_deal_sounds() {
 
 /// Drive the table forward: if a bot is due, step it after a short delay (so the
 /// action is watchable), play its sound, then recurse. When the hand ends, rake
-/// the pot sound once.
-fn advance(game: RwSignal<Option<Game>>) {
+/// the pot sound and auto-deal the next hand after a pause (unless the game is
+/// over). `epoch` invalidates pending timers when the player leaves to the menu
+/// or starts a new game, so a stale timer can't act on a fresh game.
+fn advance(game: RwSignal<Option<Game>>, epoch: RwSignal<u32>) {
     let over = game.with(|o| o.as_ref().map_or(false, |g| g.phase == Phase::HandOver));
     if over {
         audio::pot_win();
+        let game_over = game.with(|o| o.as_ref().map_or(true, |g| g.is_game_over()));
+        if !game_over {
+            let e = epoch.get_untracked();
+            set_timeout(
+                move || {
+                    if epoch.get_untracked() != e {
+                        return;
+                    }
+                    game.update(|o| {
+                        if let Some(g) = o {
+                            g.next_hand();
+                        }
+                    });
+                    play_deal_sounds();
+                    advance(game, epoch);
+                },
+                Duration::from_millis(5000),
+            );
+        }
         return;
     }
     let bot_turn = game.with(|o| o.as_ref().map_or(false, |g| g.is_bot_turn()));
     if bot_turn {
+        let e = epoch.get_untracked();
         set_timeout(
             move || {
+                if epoch.get_untracked() != e {
+                    return;
+                }
                 let acted = game
                     .try_update(|o| o.as_mut().and_then(Game::step_bot))
                     .flatten();
                 if let Some(a) = acted {
                     play_action_sound(&a);
                 }
-                advance(game);
+                advance(game, epoch);
             },
             Duration::from_millis(650),
         );
@@ -146,6 +171,8 @@ fn App() -> impl IntoView {
     let log_open = RwSignal::new(false);
     // Play the intro only once per browser session.
     let intro_done = RwSignal::new(intro_seen());
+    // Bumped on new game / return-to-menu to invalidate pending timers.
+    let epoch = RwSignal::new(0u32);
 
     // Setup form state.
     let player_name = RwSignal::new(String::new());
@@ -180,15 +207,22 @@ fn App() -> impl IntoView {
             difficulty.get(),
             seed(),
         );
+        epoch.update(|e| *e += 1);
         game.set(Some(g));
         play_deal_sounds();
-        advance(game);
+        advance(game, epoch);
     };
 
     view! {
         <div class="app">
             {move || (!intro_done.get()).then(|| intro_splash(intro_done))}
             <header class="topbar">
+                {move || game.with(Option::is_some).then(|| view! {
+                    <button class="menu-btn" on:click=move |_| {
+                        epoch.update(|e| *e += 1);
+                        game.set(None);
+                    }>"\u{2039} Menu"</button>
+                })}
                 <h1>"🦍 The Tilted Gorilla"</h1>
                 <button class="mute" on:click=move |_| {
                     let m = !muted.get();
@@ -205,7 +239,7 @@ fn App() -> impl IntoView {
                 let has_game = Memo::new(move |_| game.with(Option::is_some));
                 move || {
                     if has_game.get() {
-                        table_view(game, bet_amount, log_open).into_any()
+                        table_view(game, bet_amount, log_open, epoch).into_any()
                     } else {
                         setup_view(player_name, opponents, difficulty, stack, big_blind, deal).into_any()
                     }
@@ -402,6 +436,7 @@ fn opp_seat(game: RwSignal<Option<Game>>, i: usize, total: usize) -> impl IntoVi
         <div class="seat opp" style=seat_style(i, total) class:upper=seat_is_upper(i, total)
             class:folded=move || game.with(|o| o.as_ref().map_or(false, |g| g.hand.seats[i].status == SeatStatus::Folded))
             class:active-turn=move || game.with(|o| o.as_ref().map_or(false, |g| g.hand.to_act == Some(i)))
+            class:winner=move || game.with(|o| o.as_ref().map_or(false, |g| g.phase == Phase::HandOver && g.winners.get(i).copied().unwrap_or(false)))
         >
             <div class="hole">
                 {move || match hole.get() {
@@ -426,8 +461,19 @@ fn opp_seat(game: RwSignal<Option<Game>>, i: usize, total: usize) -> impl IntoVi
                 let bet = game.with(|o| o.as_ref().map_or(0, |g| g.hand.seats[i].street_bet));
                 (bet > 0).then(move || chip(bet, "bet").into_any()).unwrap_or_else(|| ().into_any())
             }}
+            {move || showdown_label(game, i)}
         </div>
     }
+}
+
+/// The final-hand label shown under a seat at showdown (winners highlighted).
+fn showdown_label(game: RwSignal<Option<Game>>, seat: usize) -> impl IntoView {
+    game.with(|o| {
+        let g = o.as_ref()?;
+        let desc = g.showdown_hands.get(seat)?.clone()?;
+        let win = g.winners.get(seat).copied().unwrap_or(false);
+        Some(view! { <div class="showdown-hand" class:winner=win>{desc}</div> })
+    })
 }
 
 /// The live poker table. Built once (gated by a `Memo` upstream); everything
@@ -436,6 +482,7 @@ fn table_view(
     game: RwSignal<Option<Game>>,
     bet_amount: RwSignal<u32>,
     log_open: RwSignal<bool>,
+    epoch: RwSignal<u32>,
 ) -> impl IntoView {
     // Seat count is fixed for the life of a game, so capture it once —
     // *untracked*, so building the table does not subscribe the enclosing
@@ -476,7 +523,9 @@ fn table_view(
                     </div>
 
                     <div class="seat hero" style="left:50%;top:66%"
+                        class:folded=move || game.with(|o| o.as_ref().map_or(false, |g| g.hand.seats[HUMAN].status == SeatStatus::Folded))
                         class:active-turn=move || game.with(|o| o.as_ref().map_or(false, |g| g.phase == Phase::HumanTurn))
+                        class:winner=move || game.with(|o| o.as_ref().map_or(false, |g| g.phase == Phase::HandOver && g.winners.get(HUMAN).copied().unwrap_or(false)))
                     >
                         <div class="hole">
                             <For each=move || hero_cards(game) key=|c| card_key(*c) let:card>
@@ -494,11 +543,13 @@ fn table_view(
                             </div>
                             {move || game.with(|o| o.as_ref().map_or(false, |g| g.button == HUMAN))
                                 .then(|| view! { <span class="btn-chip">"D"</span> })}
+                            {move || status_badge(game.with(|o| o.as_ref().map_or(SeatStatus::SittingOut, |g| g.hand.seats[HUMAN].status)))}
                         </div>
                         {move || {
                             let bet = game.with(|o| o.as_ref().map_or(0, |g| g.hand.seats[HUMAN].street_bet));
                             if bet > 0 { chip(bet, "bet").into_any() } else { ().into_any() }
                         }}
+                        {move || showdown_label(game, HUMAN)}
                     </div>
 
                     <For each=move || seat_indices(seat_count) key=|i| *i let:i>
@@ -508,7 +559,7 @@ fn table_view(
             </div>
 
             {move || analysis_panel(game)}
-            {move || controls(game, bet_amount)}
+            {move || controls(game, bet_amount, epoch)}
             {move || action_log(game, log_open)}
         </div>
     }
@@ -565,27 +616,29 @@ fn analysis_panel(game: RwSignal<Option<Game>>) -> impl IntoView {
 }
 
 /// The action bar (fold/check/call/raise) or the between-hands controls.
-fn controls(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>) -> impl IntoView {
+fn controls(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>, epoch: RwSignal<u32>) -> impl IntoView {
     game.with(|opt| {
         let g = opt.as_ref().unwrap();
 
         if g.phase == Phase::HandOver {
-            let over = g.is_game_over();
-            return view! {
-                <div class="controls">
-                    {if over {
-                        view!{ <div class="result">"Game over."</div> }.into_any()
-                    } else {
-                        view!{
+            // The next hand auto-deals shortly (see `advance`); at game over,
+            // offer a route back to the main menu.
+            return if g.is_game_over() {
+                view! {
+                    <div class="controls">
+                        <div class="result">"Game over. "
                             <button class="act next" on:click=move |_| {
-                                game.update(|o| { if let Some(g) = o { g.next_hand(); } });
-                                play_deal_sounds();
-                                advance(game);
-                            }>"Next hand"</button>
-                        }.into_any()
-                    }}
-                </div>
-            }.into_any();
+                                epoch.update(|e| *e += 1);
+                                game.set(None);
+                            }>"Main menu"</button>
+                        </div>
+                    </div>
+                }.into_any()
+            } else {
+                view! {
+                    <div class="controls thinking">"Next hand starting…"</div>
+                }.into_any()
+            };
         }
 
         if g.phase == Phase::BotsActing {
@@ -610,7 +663,7 @@ fn controls(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>) -> impl Int
         let act = move |action: Action| {
             play_action_sound(&action);
             game.update(|o| { if let Some(g) = o { g.human_action(action); } });
-            advance(game);
+            advance(game, epoch);
         };
 
         view! {
@@ -645,7 +698,7 @@ fn controls(game: RwSignal<Option<Game>>, bet_amount: RwSignal<u32>) -> impl Int
                             }>
                                 {move || {
                                     let to = bet_amount.get().clamp(min_to, max_to);
-                                    if to >= max_to { format!("All-in {to}") } else { format!("Raise to {to}") }
+                                    if to >= max_to { format!("All-in {to}") } else { format!("Raise {to}") }
                                 }}
                             </button>
                         </div>

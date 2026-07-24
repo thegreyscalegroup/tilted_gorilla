@@ -16,8 +16,8 @@
             --gold: #edc871;
             --gold-dim: #b9944a;
             --ink: #0c1116;
-            --bg-1: #141c24;
-            --bg-2: #0a0e12;
+            --bg-1: #101013;
+            --bg-2: #060607;
             --panel: #17222d;
             --panel-2: #22303d;
             --line: #2e3f4d;
@@ -35,9 +35,10 @@
             margin: 0;
             font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
             background:
-                radial-gradient(1200px 600px at 50% -5%, #223243 0%, var(--bg-1) 45%, var(--bg-2) 100%);
+                radial-gradient(1300px 820px at 50% -6%, #191920 0%, #0c0c0f 46%, var(--bg-2) 100%);
             color: var(--text);
             min-height: 100%;
+            overflow-x: hidden;
             -webkit-font-smoothing: antialiased;
         }
         .app { max-width: 1040px; margin: 0 auto; padding: 18px 18px 40px; }
@@ -100,6 +101,13 @@
             color: var(--text); font-size: 1.05rem; cursor: pointer;
             border-radius: 10px; padding: 8px 12px; line-height: 1; transition: background .15s;
         }
+        .menu-btn {
+            position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+            background: var(--panel-2); border: 1px solid var(--line);
+            color: var(--text); font-size: .9rem; font-weight: 600; cursor: pointer;
+            border-radius: 10px; padding: 8px 14px; line-height: 1; transition: background .15s;
+        }
+        .menu-btn:hover { background: #2c3d4c; }
         .mute:hover { background: #2c3d4c; }
 
         /* ---- Setup ---- */
@@ -144,68 +152,66 @@
            lives in the image, so the element just displays it. */
         .felt {
             position: relative; width: 100%; aspect-ratio: 3 / 2;
+            container-type: inline-size; /* cards/labels size in cqw → scale with the table */
             background: url("assets/table.png") center / contain no-repeat;
             filter: drop-shadow(0 22px 46px rgba(0,0,0,.5));
+            /* Feather the outer edge of the (near-black) table image so its
+               rectangular boundary melts into the matching page background. */
+            -webkit-mask-image: radial-gradient(ellipse 99% 99% at 50% 50%, #000 94%, transparent 100%);
+            mask-image: radial-gradient(ellipse 99% 99% at 50% 50%, #000 94%, transparent 100%);
         }
         .felt-inner { position: absolute; inset: 0; }
 
         /* ---- Center: pot + board ---- */
         .center {
-            position: absolute; left: 50%; top: 43%; transform: translate(-50%, -50%);
-            display: flex; flex-direction: column; align-items: center; gap: 7px; width: 66%;
+            position: absolute; left: 50%; top: 41%; transform: translate(-50%, -50%);
+            display: flex; flex-direction: column; align-items: center; gap: 0.7cqw; width: 66%;
         }
-        .pot-area { display: flex; align-items: center; gap: 10px; min-height: 30px; }
-        .pot-label { color: var(--gold); font-weight: 700; font-size: 1rem; letter-spacing: .3px;
+        .pot-area { display: flex; align-items: center; gap: 1cqw; min-height: 3.2cqw; }
+        .pot-label { color: var(--gold); font-weight: 700; font-size: clamp(11px, 1.6cqw, 17px); letter-spacing: .3px;
             text-shadow: 0 1px 3px rgba(0,0,0,.5); }
-        .board { display: flex; gap: 8px; justify-content: center; min-height: 74px; }
+        .board { display: flex; gap: 0.8cqw; justify-content: center; min-height: 6.8cqw; }
         .street {
-            color: rgba(255,255,255,.72); font-size: .72rem; letter-spacing: 2px;
+            color: rgba(255,255,255,.72); font-size: 1.15cqw; letter-spacing: 0.2cqw;
             text-transform: uppercase; font-weight: 600;
         }
 
         /* ---- Seats (positioned around the oval) ---- */
         .seat {
             position: absolute; transform: translate(-50%, -50%);
-            display: flex; flex-direction: column; align-items: center; gap: 6px;
-            width: 132px;
+            display: flex; flex-direction: column; align-items: center; gap: 0.6cqw;
+            width: 13.2cqw;
         }
         .seat.folded { opacity: .4; filter: grayscale(.5); }
         /* Upper seats hang their cards toward the center, not up into the rail. */
         .seat.upper { flex-direction: column-reverse; }
         .pod {
-            position: relative; display: flex; align-items: center; gap: 8px;
+            position: relative; display: flex; align-items: center; gap: 0.8cqw;
             background: linear-gradient(180deg, #1c2a35, #131d25);
-            border: 1px solid var(--line); border-radius: 40px;
-            padding: 6px 15px; box-shadow: 0 6px 16px rgba(0,0,0,.4);
+            border: 1px solid var(--line); border-radius: 4cqw;
+            padding: 0.6cqw 1.5cqw; box-shadow: 0 6px 16px rgba(0,0,0,.4);
         }
         .seat.active-turn .pod {
             border-color: var(--gold);
             box-shadow: 0 0 0 2px rgba(237,200,113,.5), 0 0 22px rgba(237,200,113,.45);
         }
-        .avatar {
-            width: 34px; height: 34px; border-radius: 50%; flex: none;
-            display: flex; align-items: center; justify-content: center; font-size: 1.1rem;
-            background: radial-gradient(circle at 40% 30%, #3a4d5d, #23323e);
-            border: 1px solid var(--line);
-        }
         .pod-info { display: flex; flex-direction: column; line-height: 1.15; }
-        .pod-info .name { font-size: .82rem; font-weight: 600; }
-        .pod-info .stack { font-size: .82rem; color: var(--gold); font-variant-numeric: tabular-nums; }
-        .seat.hero { width: 176px; }
-        .seat.hero .avatar { width: 40px; height: 40px; font-size: 1.3rem; }
-        .seat.hero .pod-info .name { font-size: .95rem; }
-        .seat.hero .pod-info .stack { font-size: .95rem; }
+        .pod-info .name { font-size: clamp(9px, 1.3cqw, 13px); font-weight: 600; }
+        .pod-info .stack { font-size: clamp(9px, 1.3cqw, 13px); color: var(--gold); font-variant-numeric: tabular-nums; }
+        .seat.hero { width: 17.5cqw; }
+        .seat.hero .pod-info .name { font-size: clamp(10px, 1.5cqw, 15px); }
+        .seat.hero .pod-info .stack { font-size: clamp(10px, 1.5cqw, 15px); }
 
         .btn-chip {
-            position: absolute; right: -8px; top: -8px;
+            position: absolute; right: -0.8cqw; top: -0.8cqw;
             background: linear-gradient(180deg, #fff, #e7e7e7); color: #1b1b1b;
-            border-radius: 50%; width: 22px; height: 22px; font-size: .72rem; font-weight: 800;
+            border-radius: 50%; width: 2.2cqw; height: 2.2cqw; font-size: clamp(9px, 1.15cqw, 12px); font-weight: 800;
             display: flex; align-items: center; justify-content: center;
             box-shadow: 0 2px 6px rgba(0,0,0,.5); border: 2px solid var(--gold);
         }
         .badge {
-            position: absolute; left: 50%; bottom: -9px; transform: translateX(-50%);
-            padding: 1px 8px; border-radius: 8px; font-size: .64rem; font-weight: 700;
+            position: absolute; left: 50%; bottom: -0.9cqw; transform: translateX(-50%);
+            padding: 0.1cqw 0.8cqw; border-radius: 8px; font-size: clamp(7px, 1cqw, 10px); font-weight: 700;
             letter-spacing: .5px; text-transform: uppercase; white-space: nowrap;
         }
         .badge.fold { background: #4a2027; color: #ff9aa8; }
@@ -213,31 +219,32 @@
 
         /* ---- Chips ---- */
         .chip {
-            position: relative; width: 40px; height: 40px; border-radius: 50%; flex: none;
+            position: relative; width: 4cqw; height: 4cqw; border-radius: 50%; flex: none;
             display: flex; align-items: center; justify-content: center;
             box-shadow: 0 4px 10px rgba(0,0,0,.5), inset 0 2px 3px rgba(255,255,255,.35),
                 inset 0 -3px 5px rgba(0,0,0,.4);
             animation: chipPop .22s ease both;
         }
         .chip .chip-ring {
-            position: absolute; inset: 4px; border-radius: 50%;
+            position: absolute; inset: 0.4cqw; border-radius: 50%;
             border: 2px dashed rgba(255,255,255,.7);
         }
-        .chip .chip-amt { font-size: .72rem; font-weight: 800; color: #fff; z-index: 1;
+        .chip .chip-amt { font-size: clamp(8px, 1.15cqw, 12px); font-weight: 800; color: #fff; z-index: 1;
             text-shadow: 0 1px 2px rgba(0,0,0,.6); font-variant-numeric: tabular-nums; }
-        .chip.pot { width: 46px; height: 46px;
+        .chip.pot { width: 4.6cqw; height: 4.6cqw;
             background: radial-gradient(circle at 40% 30%, #f4d98a, #b9863a); }
         .chip.bet {
-            width: 36px; height: 36px; margin-top: 2px;
+            width: 3.6cqw; height: 3.6cqw; margin-top: 0.2cqw;
             background: radial-gradient(circle at 40% 30%, #4f6bd8, #2c3f9e);
         }
-        .chip.bet .chip-amt { font-size: .68rem; }
+        .chip.bet .chip-amt { font-size: clamp(7px, 1.05cqw, 11px); }
 
-        /* ---- Cards ---- */
-        .hole { display: flex; gap: 5px; justify-content: center; align-items: center; position: relative; }
-        .seat.opp .hole { min-height: 46px; }
+        /* ---- Cards (sized in cqw = % of table width, so they scale with the
+           table and never overlap the labels on smaller screens) ---- */
+        .hole { display: flex; gap: 0.5cqw; justify-content: center; align-items: center; position: relative; }
+        .seat.opp .hole { min-height: 4.6cqw; }
         .card {
-            position: relative; width: 46px; height: 66px; border-radius: 7px;
+            position: relative; width: 4.6cqw; height: 6.6cqw; border-radius: 0.7cqw;
             background: linear-gradient(160deg, #ffffff, #f0f1ec);
             color: var(--ink); flex: none;
             box-shadow: 0 4px 10px rgba(0,0,0,.4), inset 0 0 0 1px rgba(0,0,0,.06);
@@ -247,13 +254,13 @@
             position: absolute; display: flex; flex-direction: column; align-items: center;
             line-height: .9; font-weight: 800;
         }
-        .card .corner .cr { font-size: .82rem; }
-        .card .corner .cs { font-size: .72rem; }
-        .card .corner.tl { top: 4px; left: 5px; }
-        .card .corner.br { bottom: 4px; right: 5px; transform: rotate(180deg); }
+        .card .corner .cr { font-size: 1.3cqw; }
+        .card .corner .cs { font-size: 1.12cqw; }
+        .card .corner.tl { top: 0.4cqw; left: 0.5cqw; }
+        .card .corner.br { bottom: 0.4cqw; right: 0.5cqw; transform: rotate(180deg); }
         .card .pip {
             position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-            font-size: 1.7rem; opacity: .92;
+            font-size: 2.7cqw; opacity: .92;
         }
         .card.slot {
             background: rgba(255,255,255,.05); box-shadow: none;
@@ -265,17 +272,17 @@
                 repeating-linear-gradient(45deg, rgba(255,255,255,.06) 0 6px, transparent 6px 12px);
             border: 2px solid #f4f4ef; display: flex; align-items: center; justify-content: center;
         }
-        .back-emblem { font-size: 1.3rem; filter: saturate(.2) brightness(1.3); opacity: .6; }
+        .back-emblem { font-size: 2.1cqw; filter: saturate(.2) brightness(1.3); opacity: .6; }
 
-        .seat.opp .card { width: 32px; height: 46px; }
-        .seat.opp .card .pip { font-size: 1.15rem; }
-        .seat.opp .card .corner .cr { font-size: .6rem; }
-        .seat.opp .card .corner .cs { font-size: .52rem; }
-        .seat.hero .card { width: 54px; height: 76px; }
-        .seat.hero .card .pip { font-size: 2rem; }
-        .seat.hero .card .corner .cr { font-size: .92rem; }
-        .board .card { width: 46px; height: 66px; }
-        .board .card .pip { font-size: 1.8rem; }
+        .seat.opp .card { width: 3.2cqw; height: 4.6cqw; }
+        .seat.opp .card .pip { font-size: 1.85cqw; }
+        .seat.opp .card .corner .cr { font-size: 0.95cqw; }
+        .seat.opp .card .corner .cs { font-size: 0.82cqw; }
+        .seat.hero .card { width: 5.4cqw; height: 7.6cqw; }
+        .seat.hero .card .pip { font-size: 3.2cqw; }
+        .seat.hero .card .corner .cr { font-size: 1.47cqw; }
+        .board .card { width: 4.6cqw; height: 6.6cqw; }
+        .board .card .pip { font-size: 2.9cqw; }
 
         /* ---- Analysis panel: hand strength + equity + outcome odds ---- */
         .analysis {
@@ -329,7 +336,7 @@
         .action-tag {
             position: absolute; top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            padding: 3px 11px; border-radius: 10px; font-size: .74rem; font-weight: 700;
+            padding: 0.3cqw 1.1cqw; border-radius: 10px; font-size: clamp(9px, 1.2cqw, 13px); font-weight: 700;
             white-space: nowrap; letter-spacing: .3px; color: #fff;
             box-shadow: 0 3px 10px rgba(0,0,0,.6); z-index: 6;
             animation: tagPop .18s ease both;
@@ -339,6 +346,26 @@
         .action-tag.call { background: linear-gradient(180deg, #3f86c0, #2c6a9e); }
         .action-tag.raise { background: linear-gradient(180deg, #46d69b, var(--accent-2)); color: #04150e; }
         .action-tag.allin { background: linear-gradient(180deg, var(--gold), var(--gold-dim)); color: #3a2c05; }
+
+        /* ---- Showdown: final-hand labels + winner highlight ---- */
+        .showdown-hand {
+            position: absolute; left: 50%; bottom: 100%; transform: translateX(-50%);
+            margin-bottom: 0.6cqw; z-index: 7;
+            padding: 0.3cqw 1cqw; border-radius: 8px; white-space: nowrap;
+            font-size: clamp(9px, 1.15cqw, 13px); font-weight: 700; letter-spacing: .2px;
+            background: rgba(10,14,18,.92); color: #d6dee5; border: 1px solid var(--line);
+            box-shadow: 0 3px 10px rgba(0,0,0,.6); animation: tagPop .2s ease both;
+        }
+        .seat.upper .showdown-hand { bottom: auto; top: 100%; margin-bottom: 0; margin-top: 0.6cqw; }
+        .showdown-hand.winner {
+            background: linear-gradient(180deg, var(--gold), var(--gold-dim));
+            color: #2a1e08; border-color: var(--gold);
+        }
+        .seat.winner .pod {
+            border-color: var(--gold);
+            box-shadow: 0 0 0 2px rgba(237,200,113,.55), 0 0 22px rgba(237,200,113,.5);
+        }
+        .seat.winner.folded { opacity: 1; filter: none; }
 
         /* ---- Log (collapsible) ---- */
         .log-panel { display: flex; flex-direction: column; gap: 8px; }
@@ -377,12 +404,32 @@
             .eq-fill { transition: none; }
         }
 
-        /* ---- Small screens ---- */
-        @media (max-width: 640px) {
-            .seat { width: 104px; }
-            .seat.hero { width: 140px; }
-            .pod-info .name, .pod-info .stack { font-size: .74rem; }
-            .act { padding: 11px 16px; font-size: .92rem; }
+        /* ---- Mobile / narrow screens ---- */
+        @media (max-width: 720px) {
+            .app { padding: 10px 8px 28px; }
+            .topbar { margin-bottom: 10px; min-height: 34px; }
+            .topbar h1 { font-size: 1.3rem; }
+            .menu-btn { padding: 6px 10px; font-size: .8rem; }
+            .mute { padding: 6px 9px; font-size: .95rem; }
+            .table-wrap { gap: 10px; }
+            /* Analysis panel stacks into two columns and stays readable. */
+            .analysis { padding: 11px 12px; }
+            .analysis-head { gap: 8px; }
+            .hand-strength { font-size: 1rem; min-width: 0; flex-basis: 100%; }
+            .equity { min-width: 0; }
+            .odds { grid-template-columns: repeat(2, 1fr); gap: 7px 12px; }
+            .odds-cell { font-size: .95rem; }
+            /* Action bar: buttons wrap, the raise row spans full width. */
+            .controls { gap: 8px; }
+            .act { padding: 12px 16px; font-size: .95rem; }
+            .raise-group { min-width: 0; flex-basis: 100%; order: 3; }
+            .log { max-height: 120px; }
+        }
+        /* Landscape phones are short — keep the whole table on screen. */
+        @media (orientation: landscape) and (max-height: 520px) {
+            .app { padding: 6px 8px 16px; }
+            .table-wrap { align-items: center; }
+            .felt { width: auto; height: 82vh; max-width: 100%; margin-inline: auto; }
         }
     </style>
 </head>

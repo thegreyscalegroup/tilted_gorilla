@@ -3,7 +3,7 @@
 
 use crate::card::Card;
 use crate::deck::Deck;
-use crate::describe::{describe, describe_hole};
+use crate::describe::{describe, describe_hole, draws};
 use crate::eval::{eval5, eval7, Category};
 use crate::hand::{Action, Hand, SeatStatus, Street};
 use crate::pot::build_pots;
@@ -203,6 +203,48 @@ fn describes_hole_cards() {
     assert_eq!(describe_hole([c("Qh"), c("7c")]), "Queen-Seven offsuit");
     // Order-independent: lower card first still names high card first.
     assert_eq!(describe_hole([c("7c"), c("Qh")]), "Queen-Seven offsuit");
+}
+
+// ---- Draw detection -----------------------------------------------------
+
+#[test]
+fn detects_flush_draw() {
+    let c = |s| Card::parse(s).unwrap();
+    // Four spades on the flop → flush draw.
+    let d = draws([c("As"), c("Ks")], &cards("Qs 2s 7h"));
+    assert!(d.contains(&"flush draw"), "got {d:?}");
+}
+
+#[test]
+fn detects_open_ended_straight_draw() {
+    let c = |s| Card::parse(s).unwrap();
+    // 6-7-8-9 → open both ends (5 or 10).
+    let d = draws([c("6h"), c("7c")], &cards("8s 9d 2h"));
+    assert!(d.contains(&"open-ended straight draw"), "got {d:?}");
+    assert!(!d.contains(&"gutshot straight draw"));
+}
+
+#[test]
+fn detects_gutshot() {
+    let c = |s| Card::parse(s).unwrap();
+    // 6-7-9-10 → only an 8 completes.
+    let d = draws([c("6h"), c("7c")], &cards("9s Th 2d"));
+    assert!(d.contains(&"gutshot straight draw"), "got {d:?}");
+}
+
+#[test]
+fn made_straight_is_not_a_draw() {
+    let c = |s| Card::parse(s).unwrap();
+    let d = draws([c("6h"), c("7c")], &cards("8s 9d Th"));
+    assert!(d.is_empty(), "made straight should not report a draw: {d:?}");
+}
+
+#[test]
+fn no_draw_reports_nothing_and_river_is_ignored() {
+    let c = |s| Card::parse(s).unwrap();
+    assert!(draws([c("Ah"), c("2c")], &cards("7s 9d Kh")).is_empty());
+    // River (5 board cards) → draws are moot.
+    assert!(draws([c("As"), c("Ks")], &cards("Qs 2s 7h 8d 9c")).is_empty());
 }
 
 // ---- Side pots ----------------------------------------------------------

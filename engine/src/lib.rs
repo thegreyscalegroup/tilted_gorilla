@@ -14,7 +14,7 @@ pub mod rng;
 
 pub use card::{Card, Suit};
 pub use deck::Deck;
-pub use describe::{describe, describe_hole};
+pub use describe::{describe, describe_hole, draws};
 pub use eval::{eval5, eval7, Category, HandValue};
 pub use hand::{Action, Hand, Legal, Payouts, Seat, SeatStatus, Street};
 pub use pot::{build_pots, Pot};
